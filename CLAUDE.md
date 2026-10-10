@@ -32,5 +32,6 @@ Claude Chat, die Projekt-Assistenz und der Sonntagslauf lesen und schreiben Klar
 - `scripts/teile.mjs` – Zerlegen/Zusammensetzen (Hülle des Artifact-Lesens wird entfernt).
 - `scripts/check.mjs` – Syntax, Platzhalter, Datenleck-Prüfung gegen `daten/live.html`.
 - `test/beispiel.json` – erfundene Daten, nur die dürfen ins Repo.
+- `icon/klar.svg` – App-Zeichen (Flieder-Kachel, Haken mit Stern). Nach Änderungen `node scripts/icons.mjs`: erneuert die Web-App-Icons in `icon/` und die eingebetteten Zeichen in `src/klar.html`.
 - Look: eigene Vorgaben (Flieder, Geist/IBM Plex, Bewegung `--ease-aus`), **nicht** der `app-ui`-Skill.
 - Alter Baukasten vom 15.09.: `Projektmanagement Vault/03 Ideen/klar-bau/` – nur noch Geschichte.
