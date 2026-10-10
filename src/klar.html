@@ -6439,7 +6439,14 @@ html:has(.mfenster) #hinweis { display: none !important; }
         "delete": function () { return sb.from(T).delete().eq("user_id", nutzer.id).eq("sammlung", sammlung).eq("id", id).then(pruef); },
         onSnapshot: function (fn, fehlerFn) {
           var schluessel = sammlung + "/" + id;
-          var holen = function () { if (nutzer) { d.get().then(fn, function (e) { if (fehlerFn) { fehlerFn(e); } }); } };
+          var holen = function () {
+            if (!nutzer) { return; }
+            d.get().then(fn, function (e) {
+              if (fehlerFn) { fehlerFn(e); }
+              /* Noch nie gelesen (gleich nach dem Anmelden)? Dann bald nochmal, nicht erst beim nächsten Nachsehen. */
+              if (!wolkeGeladen && horcher[schluessel] === holen) { setTimeout(holen, 3000); }
+            });
+          };
           horcher[schluessel] = holen;
           holen();
           return function () { delete horcher[schluessel]; };
@@ -6526,7 +6533,9 @@ html:has(.mfenster) #hinweis { display: none !important; }
         sb = mod.createClient(ziel.url, ziel.key, { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true, storageKey: "klar.anmeldung" } });
         k.bereit = true;
         sb.auth.onAuthStateChange(function (ereignis, sitzung) {
-          if (sitzung && sitzung.user) { verbunden(sitzung.user); }
+          /* Erst nach diesem Takt hat die Bibliothek die Anmeldung fertig übernommen –
+             wer sofort liest, fragt sonst manchmal noch ohne Anmeldung an. */
+          if (sitzung && sitzung.user) { setTimeout(function () { verbunden(sitzung.user); }, 0); }
         });
         return sb.auth.getSession();
       }).then(function (r) {
