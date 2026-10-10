@@ -6,7 +6,7 @@
 import { createServer } from 'node:http';
 import { SRC, ROOT, zusammensetzen, lies } from './teile.mjs';
 import { readFileSync } from 'node:fs';
-import { oeffentlich, MANIFEST, ICONS } from './oeffentlich.mjs';
+import { oeffentlich, MANIFEST, ICONS, ZIEL } from './oeffentlich.mjs';
 
 const port = +(process.env.PORT || 5190);
 createServer((req, res) => {
@@ -16,8 +16,11 @@ createServer((req, res) => {
   if (ICONS.includes(datei)) { res.writeHead(200, { 'content-type': 'image/png' }).end(readFileSync(ROOT + 'icon/' + datei)); return; }
   if (!['/', '/index.html', '/lokal', '/lokal/'].includes(pathname)) { res.writeHead(404).end('nicht gefunden'); return; }
   try {
-    /* /lokal?wolke=test: mit Konto, gegen den Test-Speicher aus test/wolke.spec.js */
-    const html = pathname.startsWith('/lokal') ? oeffentlich(undefined, searchParams.get('wolke') === 'test' ? { url: 'https://test.invalid', key: 'test' } : null)
+    /* /lokal ohne Konto · ?wolke=test gegen den nachgebauten Speicher aus test/wolke.spec.js
+       · ?wolke=echt gegen das echte Projekt aus wolke.json */
+    const w = searchParams.get('wolke');
+    const ziel = w === 'test' ? { url: 'https://test.invalid', key: 'test' } : w === 'echt' ? ZIEL : null;
+    const html = pathname.startsWith('/lokal') ? oeffentlich(undefined, ziel)
       : zusammensetzen(lies(SRC), JSON.parse(lies(ROOT + 'test/beispiel.json')));
     res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' }).end(html);
   } catch (e) {

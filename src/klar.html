@@ -6335,7 +6335,9 @@ html:has(.mfenster) #hinweis { display: none !important; }
       if (erstes && LOKAL && schreiben && (zustand.zuletzt || "") > (wolkeGesehen.zuletzt || "")) { offeneAenderung = true; }
       if (erstes && (offeneAenderung || wolkeWartet) && schreiben) { wolkeWartet = false; wolkeJetzt(); }
       standAnzeigen();
-    }, function () { wolke = null; wolkeFehler = true; standAnzeigen(); });
+      /* Steht die Seite Abgleich und Sicherung offen, zeigt sie jetzt „Abgeglichen“ und die Stände. */
+      if (erstes && LOKAL && sicherAuf) { sicherungenLaden(); }
+    }, function () { wolke = null; wolkeFehler = true; standAnzeigen(); if (LOKAL && sicherAuf) { zeichnen(); } });
     /* Was beim letzten Mal nicht mehr rausging, geht jetzt raus. */
     if (offeneAenderung && schreiben) { wolkeJetzt(); }
   }
