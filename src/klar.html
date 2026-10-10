@@ -6205,6 +6205,7 @@ html:has(.mfenster) #hinweis { display: none !important; }
   }
   function wolkeJetzt() {
     if (!wolke || wolkeAus) { return; }
+    if (LOKAL && !zustand.zuletzt) { return; }
     if (wolkeUhr) { clearTimeout(wolkeUhr); wolkeUhr = null; }
     if (wolkeLaeuft) { wolkeWartet = true; return; }
     /* Erst schreiben, wenn der Stand aus dem Speicher einmal da war. Sonst könnte
@@ -6238,6 +6239,7 @@ html:has(.mfenster) #hinweis { display: none !important; }
          speicher darf trotzdem stehenbleiben — er kostet nichts und ist die
          letzte Reserve, wenn die Wolke mal nicht antwortet. */
       standAnzeigen();
+      if (LOKAL && sicherAuf) { zeichnen(); }
     }).catch(function (f) {
       wolkeLaeuft = false;
       var code = f && f.code;
@@ -6303,6 +6305,15 @@ html:has(.mfenster) #hinweis { display: none !important; }
     try { neu = JSON.parse(d.stand); } catch (e) { return; }
     if (neu && Array.isArray(neu.aufgaben)) { BILD.rein(neu); }
     if (!neu || !Array.isArray(neu.aufgaben)) { return; }
+    if (LOKAL) {
+      /* Ein leerer Stand ersetzt nie einen echten – der hiesige geht stattdessen ins Konto. */
+      if (zustand.aufgaben.length && !neu.aufgaben.length && !(neu.mitschriften || []).length) {
+        zustand.zuletzt = new Date().toISOString(); offeneAenderung = true; standMerken(); wolkeJetzt();
+        return;
+      }
+      /* Der letzte Stand vor jeder Übernahme bleibt auf dem Gerät liegen. */
+      try { localStorage.setItem("klar.vorAbgleich", JSON.stringify(zustand)); } catch (e) {}
+    }
     zustand = neu;
     standMerken();
     zeichnen();
@@ -6325,11 +6336,19 @@ html:has(.mfenster) #hinweis { display: none !important; }
       var erstes = !wolkeGeladen;
       wolkeGeladen = true;
       if (!snap.exists) {
-        /* Erster Start mit Wolke: den vorhandenen Stand einmal hineinlegen. */
-        if (schreiben) { wolkeJetzt(); }
+        /* Erster Start mit Wolke: den vorhandenen Stand einmal hineinlegen.
+           Eigene App: nur, wenn hier je etwas eingetragen wurde – ein leeres
+           Gerät legt nie einen leeren Stand ins Konto. */
+        if (schreiben && (!LOKAL || zustand.zuletzt)) { wolkeJetzt(); }
+        if (LOKAL && sicherAuf) { zeichnen(); }
         return;
       }
       wolkeGesehen = snap.data();
+      /* Eigene App, erster Abgleich auf diesem Gerät: was hier lag, bleibt als
+         Sicherung im Konto, bevor der Stand aus dem Konto es ersetzt. */
+      if (erstes && LOKAL && zustand.aufgaben.length && (wolkeGesehen.zuletzt || "") > (zustand.zuletzt || "")) {
+        sicherungSchreiben(standKoerper(), "dieses Gerät vor dem ersten Abgleich");
+      }
       wolkeHerein(wolkeGesehen);
       /* Eigene App: was hier offline dazukam und neuer ist als die Wolke, geht jetzt raus. */
       if (erstes && LOKAL && schreiben && (zustand.zuletzt || "") > (wolkeGesehen.zuletzt || "")) { offeneAenderung = true; }

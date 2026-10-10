@@ -3,6 +3,7 @@
 // hängen – so wie echte Geräte an dasselbe Konto. Geprüft wird Klars Abgleich-Logik,
 // nicht Supabase selbst.
 import { test, expect, devices } from '@playwright/test';
+import { readFileSync } from 'node:fs';
 
 test.describe.configure({ mode: 'serial' });
 
@@ -154,4 +155,47 @@ test('anderes Konto auf demselben Gerät bekommt die alten Daten nicht', async (
   await expect(g.page.getByText('Gehört dem ersten Konto')).toHaveCount(0);
   expect(g.fehler).toEqual([]);
   await g.ctx.close();
+});
+
+test('ein leeres Gerät überschreibt nie einen echten Stand', async ({ browser }, info) => {
+  test.skip(info.project.name !== 'mac', 'baut seine Geräte selbst');
+  const s = speicher();
+  const mac = await s.geraet(browser, { viewport: { width: 1360, height: 860 } });
+  const handy = await s.geraet(browser, { ...devices['iPhone 13'], defaultBrowserType: undefined });
+  /* Mac hat schon Daten, ist aber noch nicht angemeldet */
+  await aufgabe(mac.page, 'Echter Stand am Mac');
+  /* App einmal zu und wieder auf – so wie im echten Leben zwischen zwei Tagen */
+  await mac.page.reload();
+  await expect(mac.page.getByText('Echter Stand am Mac').first()).toBeVisible();
+  /* Das leere Handy meldet sich zuerst an … */
+  await konto(handy.page, 'lukas@test.de', true);
+  await handy.page.waitForTimeout(2600);
+  /* … danach der Mac: sein Stand muss bleiben und aufs Handy wandern */
+  await konto(mac.page, 'lukas@test.de', false);
+  await mac.page.waitForTimeout(3000);
+  await expect(mac.page.getByText('Echter Stand am Mac').first()).toBeVisible();
+  await expect(handy.page.getByText('Echter Stand am Mac').first()).toBeVisible({ timeout: 10_000 });
+  expect(mac.fehler).toEqual([]);
+  await mac.ctx.close(); await handy.ctx.close();
+});
+
+test('Stand aus dem alten Klar per Claude-Brücke übernehmen, landet auf dem Handy', async ({ browser }, info) => {
+  test.skip(info.project.name !== 'mac', 'baut seine Geräte selbst');
+  const s = speicher();
+  const mac = await s.geraet(browser, { viewport: { width: 1360, height: 860 } });
+  const handy = await s.geraet(browser, { ...devices['iPhone 13'], defaultBrowserType: undefined });
+  await konto(mac.page, 'lukas@test.de', true);
+  await konto(handy.page, 'lukas@test.de', false);
+  const alt = JSON.parse(readFileSync(new URL('./beispiel.json', import.meta.url), 'utf8')).zustand;
+  await mac.page.locator('#marke').click();
+  await mac.page.locator('[data-mtu="bruecke"]').click();
+  await mac.page.locator('#breingabe').fill(JSON.stringify(alt));
+  await mac.page.locator('[data-btu="rein"]').click();
+  await expect(mac.page.getByText(/Übernommen: 4 Aufgaben/)).toBeVisible();
+  await expect(handy.page.getByText('Testkunde Muster: Angebot Hausrat schicken').first()).toBeVisible({ timeout: 10_000 });
+  await mac.page.locator('#marke').click();
+  await mac.page.locator('[data-mtu="sicher"]').click();
+  await expect(mac.page.getByText('Abgeglichen.')).toBeVisible({ timeout: 10_000 });
+  expect(mac.fehler).toEqual([]); expect(handy.fehler).toEqual([]);
+  await mac.ctx.close(); await handy.ctx.close();
 });
