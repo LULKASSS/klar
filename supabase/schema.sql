@@ -14,6 +14,13 @@ create table if not exists public.klar_dokumente (
 
 alter table public.klar_dokumente enable row level security;
 
+-- Nur so viel Recht wie die App braucht: ohne Anmeldung gar nichts, angemeldet
+-- nur lesen/anlegen/ändern/löschen (kein TRUNCATE – das ginge an der
+-- Zeilensicherheit vorbei). Die eigentliche Schranke sind die Regeln darunter.
+revoke all on table public.klar_dokumente from anon;
+revoke truncate, references, trigger on table public.klar_dokumente from authenticated;
+grant select, insert, update, delete on table public.klar_dokumente to authenticated;
+
 drop policy if exists "klar lesen" on public.klar_dokumente;
 drop policy if exists "klar anlegen" on public.klar_dokumente;
 drop policy if exists "klar aendern" on public.klar_dokumente;
