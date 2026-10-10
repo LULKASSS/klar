@@ -6212,7 +6212,7 @@ html:has(.mfenster) #hinweis { display: none !important; }
        überschreiben. */
     if (!wolkeGeladen) { wolkeWartet = true; return; }
     var koerper = standKoerper();
-    if (koerper.groesse > 230000) {
+    if (koerper.groesse > (LOKAL ? 8000000 : 230000)) {
       wolkeAus = true;
       hinweisZeigen("Der Stand ist zu gross für die laufende Sicherung geworden. Alte erledigte Aufgaben löschen.", "fehler");
       return;
@@ -6313,22 +6313,37 @@ html:has(.mfenster) #hinweis { display: none !important; }
     if (!window.claude || typeof window.claude.use !== "function") { return; }
     window.claude.use("db").then(function (ns) {
       if (!ns) { return; }
-      wolke = ns;
-      wolke.doc(STANDDOC).onSnapshot(function (snap) {
-        var erstes = !wolkeGeladen;
-        wolkeGeladen = true;
-        if (!snap.exists) {
-          /* Erster Start mit Wolke: den vorhandenen Stand einmal hineinlegen. */
-          if (schreiben) { wolkeJetzt(); }
-          return;
-        }
-        wolkeGesehen = snap.data();
-        wolkeHerein(wolkeGesehen);
-        if (erstes && (offeneAenderung || wolkeWartet) && schreiben) { wolkeWartet = false; wolkeJetzt(); }
-      }, function () { wolke = null; wolkeFehler = true; standAnzeigen(); });
-      /* Was beim letzten Mal nicht mehr rausging, geht jetzt raus. */
-      if (offeneAenderung && schreiben) { wolkeJetzt(); }
+      wolkeVerbinden(ns);
     }).catch(function () {});
+  }
+  /* Im Artifact ist ns der Datenspeicher von claude.ai, in der eigenständigen App
+     das Konto (KONTO weiter unten) – beide sprechen dieselben fünf Griffe. */
+  var wolkeLoesen = null;
+  function wolkeVerbinden(ns) {
+    wolke = ns; wolkeAus = false; wolkeFehler = false; wolkeGeladen = false; wolkeGesehen = null;
+    wolkeLoesen = wolke.doc(STANDDOC).onSnapshot(function (snap) {
+      var erstes = !wolkeGeladen;
+      wolkeGeladen = true;
+      if (!snap.exists) {
+        /* Erster Start mit Wolke: den vorhandenen Stand einmal hineinlegen. */
+        if (schreiben) { wolkeJetzt(); }
+        return;
+      }
+      wolkeGesehen = snap.data();
+      wolkeHerein(wolkeGesehen);
+      /* Eigene App: was hier offline dazukam und neuer ist als die Wolke, geht jetzt raus. */
+      if (erstes && LOKAL && schreiben && (zustand.zuletzt || "") > (wolkeGesehen.zuletzt || "")) { offeneAenderung = true; }
+      if (erstes && (offeneAenderung || wolkeWartet) && schreiben) { wolkeWartet = false; wolkeJetzt(); }
+      standAnzeigen();
+    }, function () { wolke = null; wolkeFehler = true; standAnzeigen(); });
+    /* Was beim letzten Mal nicht mehr rausging, geht jetzt raus. */
+    if (offeneAenderung && schreiben) { wolkeJetzt(); }
+  }
+  function wolkeTrennen() {
+    if (typeof wolkeLoesen === "function") { try { wolkeLoesen(); } catch (e) {} }
+    wolkeLoesen = null; wolke = null; wolkeGeladen = false; wolkeGesehen = null; wolkeFehler = false;
+    if (wolkeUhr) { clearTimeout(wolkeUhr); wolkeUhr = null; }
+    standAnzeigen();
   }
 
   /* ================= Sicherungen ansehen ================= */
@@ -6360,6 +6375,178 @@ html:has(.mfenster) #hinweis { display: none !important; }
     zeichnen(); window.scrollTo(0, 0);
     hinweisZeigen("Stand vom " + zeitText(s.am) + " wiederhergestellt.");
   }
+  /* ================= Konto und Abgleich (eigenständige App) =================
+     Nur in der öffentlichen Fassung und nur, wenn ihr Bau ein Ziel mitgibt
+     (#wolkeziel, aus wolke.json). Speicher ist eine Tabelle bei Supabase: jede
+     Zeile ein Dokument (Sammlung + Kennung), jeder Nutzer sieht nur seine eigenen
+     (Zeilensicherheit in supabase/schema.sql). Abgleich, Konflikte und Sicherungen
+     macht der vorhandene Wolken-Code – hier steht nur der Speicher darunter. */
+  var KONTO = (function () {
+    var ziel = null;
+    try { var zel = document.getElementById("wolkeziel"); ziel = zel ? JSON.parse(zel.textContent) : null; } catch (e) { ziel = null; }
+    if (!LOKAL || !ziel || !ziel.url || !ziel.key) { return null; }
+    var T = "klar_dokumente", sb = null, nutzer = null, kanal = null, horcher = {};
+    var k = { bereit: false, nutzer: null, meldung: "", arbeitet: false };
+
+    function bibliothek() {
+      if (window.__klarSupabase) { return Promise.resolve(window.__klarSupabase); }
+      return import("https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/+esm");
+    }
+    function pruef(r) { if (r && r.error) { throw r.error; } return r; }
+    function dok(sammlung, id) {
+      var d = {
+        set: function (daten) {
+          return sb.from(T).upsert({ user_id: nutzer.id, sammlung: sammlung, id: id, daten: daten, geaendert: new Date().toISOString() }).then(pruef);
+        },
+        get: function () {
+          return sb.from(T).select("daten").eq("user_id", nutzer.id).eq("sammlung", sammlung).eq("id", id).maybeSingle().then(function (r) {
+            pruef(r);
+            var z = r.data;
+            return { exists: !!z, data: function () { return z ? z.daten : undefined; } };
+          });
+        },
+        "delete": function () { return sb.from(T).delete().eq("user_id", nutzer.id).eq("sammlung", sammlung).eq("id", id).then(pruef); },
+        onSnapshot: function (fn, fehlerFn) {
+          var schluessel = sammlung + "/" + id;
+          var holen = function () { if (nutzer) { d.get().then(fn, function (e) { if (fehlerFn) { fehlerFn(e); } }); } };
+          horcher[schluessel] = holen;
+          holen();
+          return function () { delete horcher[schluessel]; };
+        }
+      };
+      return d;
+    }
+    var speicher = {
+      doc: function (pfad) { var i = pfad.indexOf("/"); return dok(pfad.slice(0, i), pfad.slice(i + 1)); },
+      collection: function (sammlung) {
+        return {
+          doc: function (id) { return dok(sammlung, id); },
+          orderBy: function (feld, richtung) {
+            return { limit: function (n) { return { get: function () {
+              return sb.from(T).select("id,daten").eq("user_id", nutzer.id).eq("sammlung", sammlung)
+                .order("daten->>" + feld, { ascending: richtung !== "desc" }).limit(n).then(function (r) {
+                  pruef(r);
+                  return { docs: (r.data || []).map(function (z) { return { id: z.id, data: function () { return z.daten; } }; }) };
+                });
+            } }; } };
+          }
+        };
+      }
+    };
+    function alleHolen() { Object.keys(horcher).forEach(function (s) { horcher[s](); }); }
+    /* Änderungen von anderen Geräten kommen live herein. Gelesen wird danach
+       frisch aus der Tabelle – große Stände passen nicht in jede Live-Nachricht. */
+    function horchen() {
+      if (kanal) { try { sb.removeChannel(kanal); } catch (e) {} }
+      kanal = sb.channel("klar-" + nutzer.id).on("postgres_changes",
+        { event: "*", schema: "public", table: T, filter: "user_id=eq." + nutzer.id },
+        function (e) {
+          var z = e && (e["new"] && e["new"].sammlung ? e["new"] : e.old);
+          var s = z && z.sammlung ? z.sammlung + "/" + z.id : null;
+          var dd = z && z.daten;
+          /* Das eigene Echo braucht nicht noch einmal gelesen zu werden. */
+          if (dd && dd.geraet === GERAET && dd.zuletzt && dd.zuletzt === zustand.zuletzt) { return; }
+          if (s && horcher[s]) { horcher[s](); } else if (!s) { alleHolen(); }
+        }).subscribe();
+    }
+    /* Zurück aus dem Hintergrund (Handy) oder wieder online: einmal nachsehen,
+       falls die Live-Verbindung in der Zwischenzeit geschlafen hat. */
+    document.addEventListener("visibilitychange", function () { if (nutzer && document.visibilityState === "visible") { alleHolen(); } });
+    window.addEventListener("online", function () { if (nutzer) { alleHolen(); } });
+
+    function verbunden(u) {
+      if (nutzer && nutzer.id === u.id) { return; }
+      /* Anderes Konto als zuletzt auf diesem Gerät: dessen Stand nicht ins neue Konto tragen. */
+      var vorher = null;
+      try { vorher = localStorage.getItem("klar.konto"); localStorage.setItem("klar.konto", u.id); } catch (e) {}
+      if (vorher && vorher !== u.id) {
+        zustand = { fassung: 12, aufgaben: [], cluster: [], mitschriften: [], reihen: [], zuletzt: null };
+        grundform(); standMerken();
+      }
+      nutzer = u; k.nutzer = u; k.meldung = "";
+      horchen();
+      wolkeVerbinden(speicher);
+      zeichnen();
+    }
+    function fehlerText(e) {
+      var m = (e && (e.message || e.error_description)) || "";
+      if (/Invalid login credentials/i.test(m)) { return "E-Mail oder Passwort stimmt nicht."; }
+      if (/Email not confirmed/i.test(m)) { return "Die E-Mail-Adresse ist noch nicht bestätigt. Den Link in der Mail öffnen, dann hier anmelden."; }
+      if (/already registered/i.test(m)) { return "Für diese Adresse gibt es schon ein Konto. Einfach anmelden."; }
+      if (/Password should be/i.test(m)) { return "Das Passwort muss mindestens 6 Zeichen haben."; }
+      if (/fetch|network/i.test(m)) { return "Keine Verbindung. Später nochmal versuchen."; }
+      return m || "Das hat nicht geklappt.";
+    }
+    k.start = function () {
+      bibliothek().then(function (mod) {
+        sb = mod.createClient(ziel.url, ziel.key, { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true, storageKey: "klar.anmeldung" } });
+        k.bereit = true;
+        sb.auth.onAuthStateChange(function (ereignis, sitzung) {
+          if (sitzung && sitzung.user) { verbunden(sitzung.user); }
+        });
+        return sb.auth.getSession();
+      }).then(function (r) {
+        var s = r && r.data && r.data.session;
+        if (s && s.user) { verbunden(s.user); } else { zeichnen(); }
+      }).catch(function () { k.meldung = "Der Abgleich ist gerade nicht erreichbar. Klar läuft auf diesem Gerät normal weiter."; zeichnen(); });
+    };
+    k.anmelden = function (mail, pw, neu) {
+      if (!sb) { return; }
+      k.arbeitet = true; k.meldung = ""; zeichnen();
+      var los = neu
+        ? sb.auth.signUp({ email: mail, password: pw, options: { emailRedirectTo: location.origin + location.pathname } })
+        : sb.auth.signInWithPassword({ email: mail, password: pw });
+      los.then(function (r) {
+        k.arbeitet = false;
+        if (r.error) { throw r.error; }
+        if (r.data && r.data.session && r.data.user) { verbunden(r.data.user); hinweisZeigen("Angemeldet. Klar gleicht sich jetzt ab."); return; }
+        k.meldung = "Fast fertig: Wir haben dir eine Mail geschickt. Den Link darin öffnen, dann hier mit E-Mail und Passwort anmelden.";
+        zeichnen();
+      }).catch(function (e) { k.arbeitet = false; k.meldung = fehlerText(e); zeichnen(); });
+    };
+    k.abmelden = function () {
+      wolkeTrennen();
+      if (kanal) { try { sb.removeChannel(kanal); } catch (e) {} kanal = null; }
+      horcher = {}; nutzer = null; k.nutzer = null;
+      if (sb) { sb.auth.signOut().catch(function () {}); }
+      zeichnen();
+      hinweisZeigen("Abgemeldet. Dein Stand bleibt auf diesem Gerät, abgeglichen wird nicht mehr.");
+    };
+    k.fach = function () {
+      var t = ['<div class="fach"><span class="name">Abgleich zwischen Geräten</span>'];
+      if (k.nutzer) {
+        t.push("<p>Angemeldet als <b>" + esc(k.nutzer.email || "") + "</b>. Jede Änderung geht nach zwei Sekunden an dein Konto und erscheint auf deinen anderen Geräten.</p>");
+        t.push('<p class="spur">' + (wolkeFehler ? "Gerade nicht erreichbar – der Stand wartet hier und geht raus, sobald es wieder klappt." : wolkeGeladen ? "Abgeglichen." : "Verbindet …") + "</p>");
+        t.push('<div class="knopfzeile"><button type="button" class="knopf-leise" data-ktu="ab">Abmelden</button></div>');
+      } else {
+        t.push("<p>Mit einem Konto hast du auf Handy und Mac denselben Stand. Ohne Konto bleibt alles nur auf diesem Gerät.</p>");
+        if (!k.bereit) {
+          t.push('<p class="spur">' + esc(k.meldung || "Wird geladen …") + "</p>");
+        } else {
+          t.push('<input class="eingabe" id="kmail" type="email" autocomplete="email" placeholder="E-Mail" aria-label="E-Mail">');
+          t.push('<input class="eingabe" id="kpw" type="password" autocomplete="current-password" placeholder="Passwort" aria-label="Passwort">');
+          t.push('<div class="knopfzeile"><button type="button" class="knopf" data-ktu="an"' + (k.arbeitet ? " disabled" : "") + '>Anmelden</button>');
+          t.push('<button type="button" class="knopf-leise" data-ktu="neu"' + (k.arbeitet ? " disabled" : "") + ">Konto anlegen</button></div>");
+          if (k.meldung) { t.push('<p class="spur">' + esc(k.meldung) + "</p>"); }
+        }
+      }
+      t.push("</div>");
+      return t.join("");
+    };
+    return k;
+  })();
+  document.addEventListener("click", function (ev) {
+    var b = ev.target && ev.target.closest ? ev.target.closest("button[data-ktu]") : null;
+    if (!b || !KONTO) { return; }
+    if (b.dataset.ktu === "ab") { KONTO.abmelden(); return; }
+    var mail = (document.getElementById("kmail") || {}).value || "", pw = (document.getElementById("kpw") || {}).value || "";
+    if (!mail.trim() || !pw) { KONTO.meldung = "E-Mail und Passwort eintragen."; zeichnen(); return; }
+    KONTO.anmelden(mail.trim(), pw, b.dataset.ktu === "neu");
+  });
+  document.addEventListener("keydown", function (ev) {
+    if (KONTO && ev.key === "Enter" && ev.target && ev.target.id === "kpw") { ev.preventDefault(); var b = document.querySelector('button[data-ktu="an"]'); if (b) { b.click(); } }
+  });
+
   /* ================= Sicherung als Datei (öffentliche Fassung) ================= */
   var dateiStand = null;
   function dateiSichern() {
@@ -6409,10 +6596,12 @@ html:has(.mfenster) #hinweis { display: none !important; }
     var t = [];
     t.push('<div class="kasten"><div class="balken">');
     t.push('<button type="button" class="zurueck" data-ptu="zu"><span aria-hidden="true">\u2190</span> Zur\u00fcck</button>');
-    t.push('<span class="lage">Sicherungen</span></div>');
-    t.push('<div class="fach"><span class="name">Wie gesichert wird</span>');
+    t.push('<span class="lage">' + (KONTO ? "Abgleich und Sicherung" : "Sicherungen") + "</span></div>");
+    if (KONTO) { t.push(KONTO.fach()); }
+    t.push('<div class="fach"><span class="name">' + (LOKAL ? "Als Datei" : "Wie gesichert wird") + "</span>");
     if (LOKAL) {
-      t.push("<p>Deine Daten liegen nur in diesem Browser auf diesem Gerät — nirgends sonst, auch nicht bei uns. Wer die Browserdaten löscht, löscht auch Klar. Sicher den Stand deshalb ab und zu als Datei; damit kannst du auch auf ein anderes Gerät umziehen.</p>");
+      t.push(wolke ? "<p>Zusätzlich zum Konto lässt sich der Stand als Datei sichern und wieder laden.</p>"
+        : "<p>Deine Daten liegen nur in diesem Browser auf diesem Gerät — nirgends sonst, auch nicht bei uns. Wer die Browserdaten löscht, löscht auch Klar. Sicher den Stand deshalb ab und zu als Datei; damit kannst du auch auf ein anderes Gerät umziehen.</p>");
       t.push('<div class="knopfzeile"><button type="button" class="knopf" data-stu="datei">Als Datei sichern</button>');
       t.push('<button type="button" class="knopf-leise" data-stu="laden">Sicherung laden</button>');
       t.push('<input type="file" id="sicherdatei" accept=".json,application/json" hidden></div>');
@@ -6420,15 +6609,14 @@ html:has(.mfenster) #hinweis { display: none !important; }
         t.push('<p class="sicher">Die Sicherung ersetzt den ganzen jetzigen Stand.</p>');
         t.push('<div class="knopfzeile"><button type="button" class="knopf" data-stu="ladenja">Ja, ersetzen</button><button type="button" class="knopf-leise" data-stu="nein">Abbrechen</button></div>');
       }
-      t.push("</div></div>");
-      return t.join("");
-    }
-    if (wolke) {
+      t.push("</div>");
+      if (!wolke) { t.push("</div>"); return t.join(""); }
+    } else if (wolke) {
       t.push("<p>Jede \u00c4nderung geht zwei Sekunden sp\u00e4ter in den Datenspeicher dieser Seite \u2014 ohne Neuladen, auf jedem Ger\u00e4t lesbar. Alle 20 Minuten bleibt zus\u00e4tzlich eine Sicherung liegen, die letzten zw\u00f6lf stehen unten.</p>");
     } else {
       t.push('<p>Die laufende Sicherung ist in dieser Ansicht nicht verf\u00fcgbar. Der Stand liegt nur im Zwischenspeicher dieses Browsers und in der ver\u00f6ffentlichten Seite.</p>');
     }
-    t.push("</div>");
+    if (!LOKAL) { t.push("</div>"); }
     t.push('<div class="fach"><span class="name">Stände</span>');
     if (sicherLaedt) {
       t.push("<p>Wird geladen \u2026</p>");
@@ -10288,7 +10476,7 @@ html:has(.mfenster) #hinweis { display: none !important; }
       t.push('<button type="button" data-mtu="lernen">Gelernt' + (wartend ? '<span class="zahl" style="margin-left:auto;color:var(--akzent)">' + wartend + "</span>" : "") + "</button>");
     }
     t.push('<button type="button" data-mtu="reihen">Reihen verwalten</button>');
-    t.push('<button type="button" data-mtu="sicher">Sicherungen</button>');
+    t.push('<button type="button" data-mtu="sicher">' + (KONTO ? "Abgleich und Sicherung" : "Sicherungen") + "</button>");
     t.push('<button type="button" data-mtu="bruecke">Claude-Brücke</button>');
     t.push('<span class="menuname">Farben</span>');
     t.push('<div class="themawahl" role="group" aria-label="Darstellung">');
@@ -12092,13 +12280,15 @@ if(window.__suche){sf.value=window.__suche;suchen(window.__suche,true)}
   } else if (LOKAL) {
     schreiben = { lokal: true };
     bereitGeprueft = true; zeichnen(); ansichtHerstellen(rueck);
+    if (KONTO) { KONTO.start(); }
     /* Browser dürfen den Speicher einer Seite sonst bei Platzmangel oder nach
        längerer Pause (Safari) leeren. */
     try { if (navigator.storage && navigator.storage.persist) { navigator.storage.persist().catch(function () {}); } } catch (e) {}
     try {
       if (!localStorage.getItem("klar.begruesst")) {
         localStorage.setItem("klar.begruesst", "ja");
-        hinweisZeigen("Deine Aufgaben bleiben in diesem Browser auf diesem Gerät. Unter Sicherungen im Menü kannst du sie als Datei sichern.");
+        hinweisZeigen(KONTO ? "Unter Abgleich und Sicherung im Menü meldest du dich an – dann hast du auf Handy und Mac denselben Stand."
+          : "Deine Aufgaben bleiben in diesem Browser auf diesem Gerät. Unter Sicherungen im Menü kannst du sie als Datei sichern.");
       }
     } catch (e) {}
   } else {

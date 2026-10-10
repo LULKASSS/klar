@@ -10,6 +10,11 @@ Sprache in App, Kommentaren und Commits: **Deutsch**.
   Dann gilt `LOKAL` im Code: Stand nur im Browser (`ideenbrett.entwurf` im localStorage), Sicherung als Datei unter Sicherungen,
   keine Vorschläge/Gelernt/Auswertung. GitHub Actions (`.github/workflows/pages.yml`) testet und veröffentlicht bei jedem Push auf `main`.
 - `LOKAL` hängt **nur** am Merkmal aus dem Bau, nie an fehlendem `window.claude` – sonst würde eine Artifact-Vorschau lokal weiterschreiben.
+- **Abgleich in der öffentlichen Fassung:** Konto bei Supabase (`KONTO` im Code, Tabelle `klar_dokumente` aus `supabase/schema.sql`,
+  Ziel aus `wolke.json`). `KONTO` bietet dieselben Griffe wie der Artifact-Speicher (`doc().set/get/delete/onSnapshot`,
+  `collection().orderBy().limit().get()`) und wird mit `wolkeVerbinden()` untergeschoben – Abgleich, Konflikte und Sicherungen
+  sind derselbe Code wie im Artifact. Test: `test/wolke.spec.js` (Supabase nachgebaut, zwei Geräte).
+- `wolke.json` enthält nur den öffentlichen Schlüssel (anon). Den geheimen Schlüssel (service_role) nie ins Repo oder in die Seite.
 - Neue Funktionen, die Claude oder die Datenbank brauchen, in der öffentlichen Fassung ausblenden (`if (!LOKAL)`).
 - Das Repo ist öffentlich: keine Kundennamen, auch nicht in Platzhaltern oder Beispielen.
 

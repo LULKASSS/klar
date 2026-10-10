@@ -10,13 +10,14 @@ import { oeffentlich, MANIFEST, ICONS } from './oeffentlich.mjs';
 
 const port = +(process.env.PORT || 5190);
 createServer((req, res) => {
-  const { pathname } = new URL(req.url, 'http://x');
+  const { pathname, searchParams } = new URL(req.url, 'http://x');
   const datei = pathname.split('/').pop();
   if (datei === 'manifest.webmanifest') { res.writeHead(200, { 'content-type': 'application/manifest+json' }).end(MANIFEST); return; }
   if (ICONS.includes(datei)) { res.writeHead(200, { 'content-type': 'image/png' }).end(readFileSync(ROOT + 'icon/' + datei)); return; }
   if (!['/', '/index.html', '/lokal', '/lokal/'].includes(pathname)) { res.writeHead(404).end('nicht gefunden'); return; }
   try {
-    const html = pathname.startsWith('/lokal') ? oeffentlich()
+    /* /lokal?wolke=test: mit Konto, gegen den Test-Speicher aus test/wolke.spec.js */
+    const html = pathname.startsWith('/lokal') ? oeffentlich(undefined, searchParams.get('wolke') === 'test' ? { url: 'https://test.invalid', key: 'test' } : null)
       : zusammensetzen(lies(SRC), JSON.parse(lies(ROOT + 'test/beispiel.json')));
     res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' }).end(html);
   } catch (e) {

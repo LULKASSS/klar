@@ -47,6 +47,20 @@ if (existsSync(ROOT + 'daten/live.html')) {
   for (const g of geheim) if (g && g.trim().length >= 20 && pruefen.includes(g.trim())) errors.push(`Text aus den Klar-Daten steht im Code: „${g.trim().slice(0, 40)}…“`);
 } else warns.push('daten/live.html fehlt – Abgleich mit echten Daten übersprungen (erst ausbauen)');
 
+/* 4. Abgleich: in wolke.json darf nur der öffentliche Schlüssel stehen */
+if (existsSync(ROOT + 'wolke.json')) {
+  let w = null;
+  try { w = JSON.parse(lies(ROOT + 'wolke.json')); } catch { errors.push('wolke.json ist kein gültiges JSON'); }
+  if (w) {
+    if (!/^https:\/\/[a-z0-9-]+\.supabase\.co\/?$/.test(w.url || '')) errors.push('wolke.json: url muss https://….supabase.co sein');
+    const k = String(w.key || '');
+    let rolle = '';
+    try { rolle = JSON.parse(Buffer.from(k.split('.')[1], 'base64url').toString()).role || ''; } catch {}
+    if (/^sb_secret_/.test(k) || rolle === 'service_role') errors.push('wolke.json enthält den GEHEIMEN Schlüssel – nur den öffentlichen (anon / publishable) eintragen');
+    else if (!/^sb_publishable_/.test(k) && rolle !== 'anon') errors.push('wolke.json: key sieht nicht nach dem öffentlichen Supabase-Schlüssel aus');
+  }
+}
+
 for (const w of warns) console.log('⚠️  ' + w);
 if (errors.length) { console.log('❌ Fehlercheck fehlgeschlagen:'); for (const e of errors) console.log('   • ' + e); process.exit(1); }
 console.log(`✅ Fehlercheck ok (${scripts.length} Scripts, ${files.length} Dateien geprüft)`);
