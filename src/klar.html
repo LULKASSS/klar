@@ -10194,21 +10194,21 @@ html:has(.mfenster) #hinweis { display: none !important; }
       if (!neu || (!Array.isArray(neu.eintraege) && !Array.isArray(neu.aufgaben))) {
         hinweisZeigen("Darin steckt keine Aufgabenliste.", "fehler"); return;
       }
-      zustand = {
-        fassung: 10,
-        eintraege: Array.isArray(neu.eintraege) ? neu.eintraege : zustand.eintraege,
-        aufgaben: Array.isArray(neu.aufgaben) ? neu.aufgaben : zustand.aufgaben,
-        cluster: Array.isArray(neu.cluster) ? neu.cluster : zustand.cluster,
-        mitschriften: Array.isArray(neu.mitschriften) ? neu.mitschriften : zustand.mitschriften,
-        reihen: Array.isArray(neu.reihen) ? neu.reihen : zustand.reihen,
-        vorschlaege: Array.isArray(neu.vorschlaege) ? neu.vorschlaege : zustand.vorschlaege,
-        lagebericht: neu.lagebericht !== undefined ? neu.lagebericht : zustand.lagebericht
-      };
-      if (neu.lernen && typeof neu.lernen === "object") { zustand.lernen = neu.lernen; }
+      /* Alles übernehmen, was der Stand mitbringt – auch Felder, die hier nicht
+         einzeln aufgezählt sind (Gruppen, Tagwerk …). Bis 10.10.2026 stand hier eine
+         feste Liste, und beim Umzug in die eigene App fielen die Gruppen heraus. */
+      var vorher = zustand;
+      zustand = {};
+      Object.keys(neu).forEach(function (k) { zustand[k] = neu[k]; });
+      ["eintraege", "aufgaben", "cluster", "mitschriften", "reihen", "vorschlaege"].forEach(function (k) {
+        if (!Array.isArray(zustand[k])) { zustand[k] = vorher[k]; }
+      });
+      if (neu.lagebericht === undefined) { zustand.lagebericht = vorher.lagebericht; }
+      if (!neu.lernen || typeof neu.lernen !== "object") { zustand.lernen = vorher.lernen; }
       if (!zustand.lernen || typeof zustand.lernen !== "object") { zustand.lernen = {}; }
       if (!Array.isArray(zustand.lernen.eingang)) { zustand.lernen.eingang = []; }
       if (!Array.isArray(zustand.lernen.ablaeufe)) { zustand.lernen.ablaeufe = []; }
-      nachziehen();
+      grundform(); nachziehen();
       brueckeAuf = false; offen = null; offenAufgabe = null; offenNotiz = null;
       zeichnen(); speichern();
       hinweisZeigen("Übernommen: " + zustand.aufgaben.length

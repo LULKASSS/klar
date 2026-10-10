@@ -72,3 +72,23 @@ test('Sicherung als Datei und wieder laden', async ({ page, browser }, info) => 
   await neu.close();
   expect(problems).toEqual([]);
 });
+
+test('Claude-Brücke übernimmt alles, auch Gruppen', async ({ page }) => {
+  const problems = await open(page);
+  const stand = {
+    fassung: 12, aufgaben: [{ id: 't-g', titel: 'Aufgabe mit Gruppe', status: 'offen', prio: 2, punkte: [], verlauf: [], gruppen: ['g-1'] }],
+    cluster: [], mitschriften: [], reihen: [], gruppen: [{ id: 'g-1', name: 'Testgruppe', kurz: [], eltern: [] }],
+    tagwerk: { '2026-10-01': 3 }, tagwerkStart: '2026-09-01T00:00:00.000Z', zuletzt: '2026-10-01T10:00:00.000Z'
+  };
+  await page.locator('#marke').click();
+  await page.locator('[data-mtu="bruecke"]').click();
+  await page.locator('#breingabe').fill(JSON.stringify(stand));
+  await page.locator('[data-btu="rein"]').click();
+  await expect(page.getByText(/Übernommen: 1 Aufgaben/)).toBeVisible();
+  await page.reload();
+  const z = await page.evaluate(() => JSON.parse(localStorage.getItem('ideenbrett.entwurf')));
+  expect(z.gruppen.map(g => g.name)).toEqual(['Testgruppe']);
+  expect(z.aufgaben[0].gruppen).toEqual(['g-1']);
+  expect(z.tagwerk['2026-10-01']).toBe(3);
+  expect(problems).toEqual([]);
+});
