@@ -13,7 +13,10 @@ function speicher() {
   async function melden(ereignis) {
     for (const p of seiten) await p.evaluate(e => window.__klarRT && window.__klarRT(e), ereignis).catch(() => {});
   }
+  const stoerung = { lesen: 0 };
   async function db(st) {
+    /* Störung von außen: die nächsten Lesezugriffe schlagen fehl (Handy kommt aus dem Hintergrund) */
+    if (st.op === 'select' && st.single && stoerung.lesen > 0) { stoerung.lesen--; return { data: null, error: { message: 'Failed to fetch' } }; }
     const f = Object.fromEntries(st.filters);
     const passt = r => Object.entries(f).every(([k, v]) => r[k] === v);
     if (st.op === 'upsert') { zeilen.set(schluessel(st.row), st.row); await melden({ eventType: 'UPDATE', new: st.row, old: {} }); return { data: null, error: null }; }
@@ -83,7 +86,7 @@ function speicher() {
     await page.goto('/lokal?wolke=test');
     return { page, ctx, fehler };
   }
-  return { geraet, zeilen };
+  return { geraet, zeilen, stoerung };
 }
 
 async function konto(page, mail, neu) {
@@ -196,6 +199,46 @@ test('Stand aus dem alten Klar per Claude-Brücke übernehmen, landet auf dem Ha
   await mac.page.locator('#marke').click();
   await mac.page.locator('[data-mtu="sicher"]').click();
   await expect(mac.page.getByText('Abgeglichen.')).toBeVisible({ timeout: 10_000 });
+  expect(mac.fehler).toEqual([]); expect(handy.fehler).toEqual([]);
+  await mac.ctx.close(); await handy.ctx.close();
+});
+
+test('ein Lesefehler kappt den Abgleich nicht', async ({ browser }, info) => {
+  test.skip(info.project.name !== 'mac', 'baut seine Geräte selbst');
+  const s = speicher();
+  const mac = await s.geraet(browser, { viewport: { width: 1360, height: 860 } });
+  const handy = await s.geraet(browser, { ...devices['iPhone 13'], defaultBrowserType: undefined });
+  await konto(mac.page, 'lukas@test.de', true);
+  await konto(handy.page, 'lukas@test.de', false);
+  s.stoerung.lesen = 1;
+  await aufgabe(mac.page, 'Während der Störung');
+  await mac.page.waitForTimeout(3500);
+  await aufgabe(mac.page, 'Nach der Störung');
+  await expect(handy.page.getByText('Nach der Störung').first()).toBeVisible({ timeout: 10_000 });
+  await expect(handy.page.getByText('Während der Störung').first()).toBeVisible();
+  /* Und das Handy schreibt danach selbst wieder ins Konto */
+  await aufgabe(handy.page, 'Vom Handy nach der Störung');
+  await expect(mac.page.getByText('Vom Handy nach der Störung').first()).toBeVisible({ timeout: 10_000 });
+  await mac.ctx.close(); await handy.ctx.close();
+});
+
+test('von Hand: Stand ins Konto und aus dem Konto holen', async ({ browser }, info) => {
+  test.skip(info.project.name !== 'mac', 'baut seine Geräte selbst');
+  const s = speicher();
+  const mac = await s.geraet(browser, { viewport: { width: 1360, height: 860 } });
+  const handy = await s.geraet(browser, { ...devices['iPhone 13'], defaultBrowserType: undefined });
+  await konto(mac.page, 'lukas@test.de', true);
+  await aufgabe(mac.page, 'Vom Mac festgeschrieben');
+  await mac.page.locator('#marke').click(); await mac.page.locator('[data-mtu="sicher"]').click();
+  await expect(mac.page.getByText(/Im Konto/)).toBeVisible();
+  await mac.page.locator('[data-ktu="hoch"]').click();
+  await expect(mac.page.getByText(/1 Aufgaben · Stand .* · von /)).toBeVisible({ timeout: 10_000 });
+  await konto(handy.page, 'lukas@test.de', false);
+  await handy.page.locator('#marke').click(); await handy.page.locator('[data-mtu="sicher"]').click();
+  await handy.page.locator('[data-ktu="runter"]').click();
+  await expect(handy.page.getByText('Stand aus dem Konto geholt: 1 Aufgaben.')).toBeVisible();
+  await handy.page.locator('[data-ptu="zu"]').first().click();
+  await expect(handy.page.getByText('Vom Mac festgeschrieben').first()).toBeVisible();
   expect(mac.fehler).toEqual([]); expect(handy.fehler).toEqual([]);
   await mac.ctx.close(); await handy.ctx.close();
 });

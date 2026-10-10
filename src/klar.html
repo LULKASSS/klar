@@ -6079,7 +6079,7 @@ html:has(.mfenster) #hinweis { display: none !important; }
   /* Seit 16.09.2026 gibt es keinen Sichern-Knopf mehr. Jede Änderung geht von
      selbst in den Datenspeicher; der Knopf taucht nur noch als Warnung auf,
      wenn das Schreiben dort gerade nicht klappt. */
-  var wolkeFehler = false;
+  var wolkeFehler = false, wolkeFehlerText = "";
   function standAnzeigen() {
     var p = document.getElementById("standpunkt");
     if (!p) { return; }
@@ -6230,8 +6230,10 @@ html:has(.mfenster) #hinweis { display: none !important; }
     var marke = aenderungsNr;
     wolke.doc(STANDDOC).set(koerper).then(function () {
       wolkeLaeuft = false;
-      wolkeFehler = false;
+      wolkeFehler = false; wolkeFehlerText = "";
       wolkeEigen = koerper.zuletzt;
+      /* Eigene App: im Konto liegt jetzt genau dieser Stand. */
+      if (LOKAL) { wolkeGesehen = koerper; }
       if (marke === aenderungsNr) { offeneAenderung = false; standVergessen(); }
       sicherungVielleicht(koerper);
       if (wolkeWartet) { wolkeWartet = false; wolkeJetzt(); }
@@ -6248,7 +6250,8 @@ html:has(.mfenster) #hinweis { display: none !important; }
       }
       /* Alles andere ist voruebergehend: in zehn Sekunden nochmal. Der
          Zwischenspeicher haelt solange. */
-      wolkeFehler = true; standAnzeigen();
+      wolkeFehler = true; wolkeFehlerText = (f && (f.message || f.code)) || "unbekannt"; standAnzeigen();
+      if (LOKAL && sicherAuf) { zeichnen(); }
       if (wolkeUhr) { clearTimeout(wolkeUhr); }
       wolkeUhr = setTimeout(wolkeJetzt, 10000);
     });
@@ -6344,6 +6347,7 @@ html:has(.mfenster) #hinweis { display: none !important; }
         return;
       }
       wolkeGesehen = snap.data();
+      if (LOKAL) { wolkeFehler = false; wolkeFehlerText = ""; }
       /* Eigene App, erster Abgleich auf diesem Gerät: was hier lag, bleibt als
          Sicherung im Konto, bevor der Stand aus dem Konto es ersetzt. */
       if (erstes && LOKAL && zustand.aufgaben.length && (wolkeGesehen.zuletzt || "") > (zustand.zuletzt || "")) {
@@ -6356,7 +6360,13 @@ html:has(.mfenster) #hinweis { display: none !important; }
       standAnzeigen();
       /* Steht die Seite Abgleich und Sicherung offen, zeigt sie jetzt „Abgeglichen“ und die Stände. */
       if (erstes && LOKAL && sicherAuf) { sicherungenLaden(); }
-    }, function () { wolke = null; wolkeFehler = true; standAnzeigen(); if (LOKAL && sicherAuf) { zeichnen(); } });
+    }, function (f) {
+      wolkeFehler = true; wolkeFehlerText = (f && (f.message || f.code)) || "unbekannt";
+      /* Eigene App: ein Lesefehler (Handy kommt aus dem Hintergrund, Netz noch nicht da)
+         ist vorübergehend – die Verbindung bleibt, beim nächsten Nachsehen klappt es. */
+      if (!LOKAL) { wolke = null; }
+      standAnzeigen(); if (LOKAL && sicherAuf) { zeichnen(); }
+    });
     /* Was beim letzten Mal nicht mehr rausging, geht jetzt raus. */
     if (offeneAenderung && schreiben) { wolkeJetzt(); }
   }
@@ -6473,6 +6483,17 @@ html:has(.mfenster) #hinweis { display: none !important; }
     /* Zurück aus dem Hintergrund (Handy) oder wieder online: einmal nachsehen,
        falls die Live-Verbindung in der Zwischenzeit geschlafen hat. */
     document.addEventListener("visibilitychange", function () { if (nutzer && document.visibilityState === "visible") { alleHolen(); } });
+    /* Sicherheitsleine, falls die Live-Verbindung still eingeschlafen ist: alle
+       20 Sekunden nur die Uhrzeit des Stands lesen (ein paar Bytes) und erst bei
+       einer Abweichung den ganzen Stand holen. */
+    setInterval(function () {
+      if (!nutzer || !sb || document.visibilityState !== "visible" || !horcher["stand/aktuell"]) { return; }
+      sb.from(T).select("zuletzt:daten->>zuletzt").eq("user_id", nutzer.id).eq("sammlung", "stand").eq("id", "aktuell").maybeSingle().then(function (r) {
+        if (!r || r.error) { return; }
+        var z = r.data && (r.data.zuletzt || (r.data.daten && r.data.daten.zuletzt));
+        if (z && z !== (wolkeGesehen && wolkeGesehen.zuletzt)) { horcher["stand/aktuell"](); }
+      }, function () {});
+    }, 20000);
     window.addEventListener("online", function () { if (nutzer) { alleHolen(); } });
 
     function verbunden(u) {
@@ -6525,6 +6546,31 @@ html:has(.mfenster) #hinweis { display: none !important; }
         zeichnen();
       }).catch(function (e) { k.arbeitet = false; k.meldung = fehlerText(e); zeichnen(); });
     };
+    /* Von Hand: diesen Stand für alle Geräte festschreiben … */
+    k.hoch = function () {
+      if (!nutzer) { return; }
+      zustand.zuletzt = new Date().toISOString(); offeneAenderung = true; standMerken();
+      if (!wolke) { wolkeVerbinden(speicher); } else { wolkeFehler = false; wolkeAus = false; wolkeJetzt(); }
+      hinweisZeigen("Dieser Stand geht jetzt ins Konto – " + zustand.aufgaben.length + " Aufgaben. Die anderen Geräte übernehmen ihn.");
+      zeichnen();
+    };
+    /* … oder den Stand aus dem Konto holen, egal wie alt der hiesige ist. */
+    k.runter = function () {
+      if (!nutzer) { return; }
+      if (!wolke) { wolkeVerbinden(speicher); }
+      speicher.doc(STANDDOC).get().then(function (snap) {
+        if (!snap.exists) { hinweisZeigen("Im Konto liegt noch kein Stand.", "fehler"); return; }
+        var d = snap.data(), neu = null;
+        try { neu = JSON.parse(d.stand); } catch (e) { neu = null; }
+        if (!neu || !Array.isArray(neu.aufgaben)) { hinweisZeigen("Der Stand im Konto lässt sich nicht lesen.", "fehler"); return; }
+        try { localStorage.setItem("klar.vorAbgleich", JSON.stringify(zustand)); } catch (e) {}
+        BILD.rein(neu);
+        zustand = neu; grundform(); nachziehen();
+        wolkeGesehen = d; wolkeFehler = false; wolkeFehlerText = ""; offeneAenderung = false;
+        standMerken(); zeichnen();
+        hinweisZeigen("Stand aus dem Konto geholt: " + zustand.aufgaben.length + " Aufgaben.");
+      }, function (f) { hinweisZeigen("Das Konto antwortet gerade nicht" + (f && f.message ? " (" + f.message + ")" : "") + ".", "fehler"); });
+    };
     k.abmelden = function () {
       wolkeTrennen();
       if (kanal) { try { sb.removeChannel(kanal); } catch (e) {} kanal = null; }
@@ -6538,7 +6584,16 @@ html:has(.mfenster) #hinweis { display: none !important; }
       if (k.nutzer) {
         t.push("<p>Angemeldet als <b>" + esc(k.nutzer.email || "") + "</b>. Jede Änderung geht nach zwei Sekunden an dein Konto und erscheint auf deinen anderen Geräten.</p>");
         t.push('<p class="spur">' + (wolkeFehler ? "Gerade nicht erreichbar – der Stand wartet hier und geht raus, sobald es wieder klappt." : wolkeGeladen ? "Abgeglichen." : "Verbindet …") + "</p>");
-        t.push('<div class="knopfzeile"><button type="button" class="knopf-leise" data-ktu="ab">Abmelden</button></div>');
+        var hier = zustand.aufgaben.length + " Aufgaben · Stand " + (zustand.zuletzt ? zeitText(zustand.zuletzt) : "noch nichts eingetragen");
+        var dort = !wolkeGeladen ? "wird gelesen …"
+          : !wolkeGesehen ? "noch nichts"
+          : (wolkeGesehen.aufgaben || 0) + " Aufgaben · Stand " + zeitText(wolkeGesehen.zuletzt) + (wolkeGesehen.geraetname ? " · von " + wolkeGesehen.geraetname : "");
+        t.push('<ul class="clusterliste"><li><span class="wieviel" style="min-width:110px">Auf diesem Gerät</span><span class="wieviel">' + esc(hier) + "</span></li>");
+        t.push('<li><span class="wieviel" style="min-width:110px">Im Konto</span><span class="wieviel">' + esc(dort) + "</span></li></ul>");
+        if (wolkeFehlerText) { t.push('<p class="spur">Letzter Fehler: ' + esc(wolkeFehlerText) + "</p>"); }
+        t.push('<div class="knopfzeile"><button type="button" class="knopf" data-ktu="hoch">Diesen Stand ins Konto</button>');
+        t.push('<button type="button" class="knopf-leise" data-ktu="runter">Stand aus dem Konto holen</button>');
+        t.push('<button type="button" class="knopf-leise" data-ktu="ab">Abmelden</button></div>');
       } else {
         t.push("<p>Mit einem Konto hast du auf Handy und Mac denselben Stand. Ohne Konto bleibt alles nur auf diesem Gerät.</p>");
         if (!k.bereit) {
@@ -6560,6 +6615,8 @@ html:has(.mfenster) #hinweis { display: none !important; }
     var b = ev.target && ev.target.closest ? ev.target.closest("button[data-ktu]") : null;
     if (!b || !KONTO) { return; }
     if (b.dataset.ktu === "ab") { KONTO.abmelden(); return; }
+    if (b.dataset.ktu === "hoch") { KONTO.hoch(); return; }
+    if (b.dataset.ktu === "runter") { KONTO.runter(); return; }
     var mail = (document.getElementById("kmail") || {}).value || "", pw = (document.getElementById("kpw") || {}).value || "";
     if (!mail.trim() || !pw) { KONTO.meldung = "E-Mail und Passwort eintragen."; zeichnen(); return; }
     KONTO.anmelden(mail.trim(), pw, b.dataset.ktu === "neu");
