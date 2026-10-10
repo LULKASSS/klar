@@ -1,0 +1,19 @@
+{
+  "name": "klar",
+  "version": "1.0.0",
+  "description": "Aufgaben, Ideen, Wissensbaum und Zeitstrahl – Lukas' Steuerzentrale",
+  "private": true,
+  "author": "Lukas Rückborn",
+  "type": "module",
+  "scripts": {
+    "dev": "node scripts/serve.mjs",
+    "check": "node scripts/check.mjs",
+    "test": "node scripts/check.mjs && playwright test",
+    "ausbauen": "node scripts/ausbauen.mjs",
+    "einbauen": "node scripts/einbauen.mjs",
+    "oeffentlich": "node scripts/oeffentlich.mjs"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.64.0"
+  }
+}

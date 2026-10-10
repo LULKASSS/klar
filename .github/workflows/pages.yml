@@ -1,0 +1,41 @@
+name: Prüfen und veröffentlichen
+# Testet bei jedem Push. Auf main wird danach die öffentliche Fassung
+# (leer, Daten nur im Browser) auf GitHub Pages gestellt.
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+concurrency:
+  group: pages-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  pruefen:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci --ignore-scripts
+      - run: node scripts/check.mjs
+      - run: npx playwright install --with-deps chromium
+      - run: npx playwright test
+        env: { CI: '1' }
+      - run: node scripts/oeffentlich.mjs public/index.html
+      - run: touch public/.nojekyll
+      - uses: actions/upload-pages-artifact@v3
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        with: { path: public }
+  veroeffentlichen:
+    needs: pruefen
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - id: deploy
+        uses: actions/deploy-pages@v4

@@ -1,0 +1,74 @@
+// Öffentliche Fassung (/lokal): startet leer, speichert im Browser, Sicherung als Datei.
+import { test, expect } from '@playwright/test';
+import { readFileSync } from 'node:fs';
+
+async function open(page) {
+  const problems = [];
+  page.on('pageerror', e => problems.push('Fehler: ' + e.message));
+  page.on('console', m => { if (m.type() === 'error') problems.push('Konsole: ' + m.text()); });
+  await page.goto('/lokal');
+  return problems;
+}
+
+async function aufgabeAnlegen(page, titel) {
+  const neu = page.locator('#neu');
+  if (await neu.isVisible()) await neu.click(); else await page.locator('#fab').click();
+  await page.locator('#dtitel').fill(titel);
+  await page.locator('[data-dtu="anlegen"]').click();
+  await expect(page.getByText(titel).first()).toBeVisible();
+}
+
+async function menu(page, was) {
+  await page.locator('#marke').click();
+  await page.locator(`[data-mtu="${was}"]`).click();
+}
+
+test('startet leer, ohne Nur-Lesen und ohne Claude-Menüpunkte @mobil @dunkel', async ({ page }) => {
+  const problems = await open(page);
+  await expect(page.getByText('Deine Aufgaben bleiben in diesem Browser')).toBeVisible();
+  await expect(page.getByText('Nur-Lesen-Ansicht')).toHaveCount(0);
+  await expect(page.getByText('Testkunde Muster')).toHaveCount(0);
+  await page.locator('#marke').click();
+  await expect(page.locator('[data-mtu="sicher"]')).toBeVisible();
+  await expect(page.locator('[data-mtu="vorschlaege"]')).toHaveCount(0);
+  await expect(page.locator('[data-mtu="lernen"]')).toHaveCount(0);
+  await page.waitForTimeout(300);
+  expect(problems).toEqual([]);
+});
+
+test('Aufgabe bleibt nach Neuladen, ein anderer Browser sieht sie nicht @mobil', async ({ page, browser }) => {
+  const problems = await open(page);
+  await aufgabeAnlegen(page, 'Lokale Testaufgabe');
+  await page.reload();
+  await expect(page.getByText('Lokale Testaufgabe').first()).toBeVisible();
+  const fremd = await browser.newContext();
+  const p2 = await fremd.newPage();
+  await p2.goto('/lokal');
+  await expect(p2.locator('#app')).toBeVisible();
+  await expect(p2.getByText('Lokale Testaufgabe')).toHaveCount(0);
+  await fremd.close();
+  expect(problems).toEqual([]);
+});
+
+test('Sicherung als Datei und wieder laden', async ({ page, browser }, info) => {
+  const problems = await open(page);
+  await aufgabeAnlegen(page, 'Aufgabe zum Umziehen');
+  await menu(page, 'sicher');
+  const [dl] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: 'Als Datei sichern' }).click()]);
+  expect(dl.suggestedFilename()).toMatch(/^klar-sicherung-\d{4}-\d\d-\d\d\.json$/);
+  const pfad = info.outputPath('sicherung.json');
+  await dl.saveAs(pfad);
+  expect(JSON.parse(readFileSync(pfad, 'utf8')).zustand.aufgaben.map(a => a.titel)).toContain('Aufgabe zum Umziehen');
+
+  const neu = await browser.newContext();
+  const p2 = await neu.newPage();
+  await p2.goto('/lokal');
+  await menu(p2, 'sicher');
+  await p2.locator('#sicherdatei').setInputFiles(pfad);
+  await p2.getByRole('button', { name: 'Ja, ersetzen' }).click();
+  await expect(p2.getByText('Sicherung geladen: 1 Aufgaben.')).toBeVisible();
+  await p2.reload();
+  await expect(p2.getByText('Aufgabe zum Umziehen').first()).toBeVisible();
+  await neu.close();
+  expect(problems).toEqual([]);
+});

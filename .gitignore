@@ -1,0 +1,10 @@
+node_modules/
+test-results/
+playwright-report/
+.DS_Store
+
+# Klar-Daten (Aufgaben, Kundennamen, Mitschriften) gehören nie ins Repo – auch nicht ins private.
+daten/
+ausgabe/
+# Gebaute öffentliche Fassung – entsteht in GitHub Actions
+public/
