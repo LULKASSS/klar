@@ -6505,7 +6505,8 @@ html:has(.mfenster) #hinweis { display: none !important; }
         zustand = { fassung: 12, aufgaben: [], cluster: [], mitschriften: [], reihen: [], zuletzt: null };
         grundform(); standMerken();
       }
-      nutzer = u; k.nutzer = u; k.meldung = "";
+      nutzer = u; k.nutzer = u; k.meldung = ""; k.arbeitet = false;
+      torAn = false; k.tor();
       horchen();
       wolkeVerbinden(speicher);
       zeichnen();
@@ -6520,6 +6521,7 @@ html:has(.mfenster) #hinweis { display: none !important; }
       return m || "Das hat nicht geklappt.";
     }
     k.start = function () {
+      if (!hatteSitzung) { torAn = true; k.tor(); }
       bibliothek().then(function (mod) {
         sb = mod.createClient(ziel.url, ziel.key, { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true, storageKey: "klar.anmeldung" } });
         k.bereit = true;
@@ -6529,85 +6531,113 @@ html:has(.mfenster) #hinweis { display: none !important; }
         return sb.auth.getSession();
       }).then(function (r) {
         var s = r && r.data && r.data.session;
-        if (s && s.user) { verbunden(s.user); } else { zeichnen(); }
-      }).catch(function () { k.meldung = "Der Abgleich ist gerade nicht erreichbar. Klar läuft auf diesem Gerät normal weiter."; zeichnen(); });
+        if (s && s.user) { verbunden(s.user); } else { torAn = true; k.tor(); }
+      }).catch(function () {
+        /* Kein Netz: Wer schon angemeldet war, arbeitet mit dem Stand auf dem Gerät
+           weiter; sobald wieder Netz da ist, verbindet Klar sich von selbst. */
+        k.meldung = "Keine Verbindung. Sobald du wieder online bist, geht es weiter.";
+        if (hatteSitzung) { hinweisZeigen("Keine Verbindung – deine Änderungen bleiben hier und werden gespeichert, sobald du wieder online bist.", "fehler"); }
+        k.tor();
+        window.addEventListener("online", function nochmal() { window.removeEventListener("online", nochmal); if (!sb) { k.start(); } });
+      });
     };
     k.anmelden = function (mail, pw, neu) {
       if (!sb) { return; }
-      k.arbeitet = true; k.meldung = ""; zeichnen();
+      k.arbeitet = true; k.meldung = ""; k.tor();
       var los = neu
         ? sb.auth.signUp({ email: mail, password: pw, options: { emailRedirectTo: location.origin + location.pathname } })
         : sb.auth.signInWithPassword({ email: mail, password: pw });
       los.then(function (r) {
         k.arbeitet = false;
         if (r.error) { throw r.error; }
-        if (r.data && r.data.session && r.data.user) { verbunden(r.data.user); hinweisZeigen("Angemeldet. Klar gleicht sich jetzt ab."); return; }
+        if (r.data && r.data.session && r.data.user) { verbunden(r.data.user); return; }
         k.meldung = "Fast fertig: Wir haben dir eine Mail geschickt. Den Link darin öffnen, dann hier mit E-Mail und Passwort anmelden.";
-        zeichnen();
-      }).catch(function (e) { k.arbeitet = false; k.meldung = fehlerText(e); zeichnen(); });
+        k.tor();
+      }).catch(function (e) { k.arbeitet = false; k.meldung = fehlerText(e); k.tor(); });
     };
-    /* Von Hand: diesen Stand für alle Geräte festschreiben … */
-    k.hoch = function () {
-      if (!nutzer) { return; }
-      zustand.zuletzt = new Date().toISOString(); offeneAenderung = true; standMerken();
-      if (!wolke) { wolkeVerbinden(speicher); } else { wolkeFehler = false; wolkeAus = false; wolkeJetzt(); }
-      hinweisZeigen("Dieser Stand geht jetzt ins Konto – " + zustand.aufgaben.length + " Aufgaben. Die anderen Geräte übernehmen ihn.");
-      zeichnen();
-    };
-    /* … oder den Stand aus dem Konto holen, egal wie alt der hiesige ist. */
-    k.runter = function () {
-      if (!nutzer) { return; }
-      if (!wolke) { wolkeVerbinden(speicher); }
-      speicher.doc(STANDDOC).get().then(function (snap) {
-        if (!snap.exists) { hinweisZeigen("Im Konto liegt noch kein Stand.", "fehler"); return; }
-        var d = snap.data(), neu = null;
-        try { neu = JSON.parse(d.stand); } catch (e) { neu = null; }
-        if (!neu || !Array.isArray(neu.aufgaben)) { hinweisZeigen("Der Stand im Konto lässt sich nicht lesen.", "fehler"); return; }
-        try { localStorage.setItem("klar.vorAbgleich", JSON.stringify(zustand)); } catch (e) {}
-        BILD.rein(neu);
-        zustand = neu; grundform(); nachziehen();
-        wolkeGesehen = d; wolkeFehler = false; wolkeFehlerText = ""; offeneAenderung = false;
-        standMerken(); zeichnen();
-        hinweisZeigen("Stand aus dem Konto geholt: " + zustand.aufgaben.length + " Aufgaben.");
-      }, function (f) { hinweisZeigen("Das Konto antwortet gerade nicht" + (f && f.message ? " (" + f.message + ")" : "") + ".", "fehler"); });
-    };
-    k.abmelden = function () {
+    /* Abmelden: erst, wenn alles im Konto ist. Danach liegt auf dem Gerät nichts mehr –
+       der Stand gehört dem Konto, nicht dem Gerät. */
+    k.abmelden = function (versuch) {
+      versuch = versuch || 0;
+      if (offeneAenderung) {
+        if (wolke && versuch < 24) {
+          if (versuch === 0) { wolkeFehler = false; wolkeAus = false; wolkeJetzt(); hinweisZeigen("Einen Moment, die letzten Änderungen werden noch gespeichert …"); }
+          setTimeout(function () { k.abmelden(versuch + 1); }, 500);
+          return;
+        }
+        hinweisZeigen("Abmelden geht erst, wenn alles gespeichert ist – gerade fehlt die Verbindung.", "fehler");
+        return;
+      }
       wolkeTrennen();
       if (kanal) { try { sb.removeChannel(kanal); } catch (e) {} kanal = null; }
       horcher = {}; nutzer = null; k.nutzer = null;
       if (sb) { sb.auth.signOut().catch(function () {}); }
+      try { ["ideenbrett.entwurf", "klar.vorAbgleich", "klar.vorLaden"].forEach(function (x) { localStorage.removeItem(x); }); } catch (e) {}
+      zustand = { fassung: 12, aufgaben: [], cluster: [], mitschriften: [], reihen: [], zuletzt: null };
+      grundform();
+      sicherAuf = false; sicherListe = null; menuAuf = false;
+      torAn = true; k.meldung = "Abgemeldet."; k.tor();
       zeichnen();
-      hinweisZeigen("Abgemeldet. Dein Stand bleibt auf diesem Gerät, abgeglichen wird nicht mehr.");
     };
     k.fach = function () {
-      var t = ['<div class="fach"><span class="name">Abgleich zwischen Geräten</span>'];
-      if (k.nutzer) {
-        t.push("<p>Angemeldet als <b>" + esc(k.nutzer.email || "") + "</b>. Jede Änderung geht nach zwei Sekunden an dein Konto und erscheint auf deinen anderen Geräten.</p>");
-        t.push('<p class="spur">' + (wolkeFehler ? "Gerade nicht erreichbar – der Stand wartet hier und geht raus, sobald es wieder klappt." : wolkeGeladen ? "Abgeglichen." : "Verbindet …") + "</p>");
-        var hier = zustand.aufgaben.length + " Aufgaben · Stand " + (zustand.zuletzt ? zeitText(zustand.zuletzt) : "noch nichts eingetragen");
-        var dort = !wolkeGeladen ? "wird gelesen …"
-          : !wolkeGesehen ? "noch nichts"
-          : (wolkeGesehen.aufgaben || 0) + " Aufgaben · Stand " + zeitText(wolkeGesehen.zuletzt) + (wolkeGesehen.geraetname ? " · von " + wolkeGesehen.geraetname : "");
-        t.push('<ul class="clusterliste"><li><span class="wieviel" style="min-width:110px">Auf diesem Gerät</span><span class="wieviel">' + esc(hier) + "</span></li>");
-        t.push('<li><span class="wieviel" style="min-width:110px">Im Konto</span><span class="wieviel">' + esc(dort) + "</span></li></ul>");
-        if (wolkeFehlerText) { t.push('<p class="spur">Letzter Fehler: ' + esc(wolkeFehlerText) + "</p>"); }
-        t.push('<div class="knopfzeile"><button type="button" class="knopf" data-ktu="hoch">Diesen Stand ins Konto</button>');
-        t.push('<button type="button" class="knopf-leise" data-ktu="runter">Stand aus dem Konto holen</button>');
-        t.push('<button type="button" class="knopf-leise" data-ktu="ab">Abmelden</button></div>');
-      } else {
-        t.push("<p>Mit einem Konto hast du auf Handy und Mac denselben Stand. Ohne Konto bleibt alles nur auf diesem Gerät.</p>");
-        if (!k.bereit) {
-          t.push('<p class="spur">' + esc(k.meldung || "Wird geladen …") + "</p>");
-        } else {
-          t.push('<input class="eingabe" id="kmail" type="email" autocomplete="email" placeholder="E-Mail" aria-label="E-Mail">');
-          t.push('<input class="eingabe" id="kpw" type="password" autocomplete="current-password" placeholder="Passwort" aria-label="Passwort">');
-          t.push('<div class="knopfzeile"><button type="button" class="knopf" data-ktu="an"' + (k.arbeitet ? " disabled" : "") + '>Anmelden</button>');
-          t.push('<button type="button" class="knopf-leise" data-ktu="neu"' + (k.arbeitet ? " disabled" : "") + ">Konto anlegen</button></div>");
-          if (k.meldung) { t.push('<p class="spur">' + esc(k.meldung) + "</p>"); }
-        }
-      }
+      var t = ['<div class="fach"><span class="name">Konto</span>'];
+      t.push("<p>Angemeldet als <b>" + esc((k.nutzer && k.nutzer.email) || "") + "</b>. Alles, was du in Klar einträgst, wird automatisch in deinem Konto gespeichert und ist auf jedem Gerät da, auf dem du angemeldet bist.</p>");
+      var ok = !wolkeFehler && wolkeGeladen;
+      t.push('<p class="spur kontostand" data-ok="' + (ok ? "ja" : wolkeFehler ? "nein" : "") + '">' + (wolkeFehler ? "Gerade nicht gespeichert – keine Verbindung. Deine Änderungen bleiben hier und gehen raus, sobald es wieder klappt." : wolkeGeladen ? "Alles gespeichert." : "Verbindet …") + "</p>");
+      t.push('<div class="knopfzeile"><button type="button" class="knopf-leise" data-ktu="ab">Abmelden</button></div>');
       t.push("</div>");
       return t.join("");
+    };
+
+    /* ---------- Die Anmeldeseite ----------
+       Ohne Anmeldung zeigt Klar nur sie. Wird nicht bei jedem Zeichnen neu gebaut
+       (sonst wäre Getipptes weg) – nur Meldung und Knöpfe werden nachgezogen. */
+    var hatteSitzung = false;
+    try { hatteSitzung = !!localStorage.getItem("klar.anmeldung"); } catch (e) {}
+    var torAn = false;
+    var torStil = document.createElement("style");
+    torStil.textContent = [
+      "html[data-tor] #app, html[data-tor] #untenbereich, html[data-tor] #hinweis { display: none !important; }",
+      "#tor { position: fixed; inset: 0; z-index: 90; display: flex; align-items: center; justify-content: center; padding: 24px 16px; background: var(--leinwand); overflow-y: auto; }",
+      "#tor .tor-karte { width: 100%; max-width: 380px; display: flex; flex-direction: column; gap: 14px; }",
+      "#tor .tor-kopf { display: flex; flex-direction: column; align-items: center; gap: 12px; text-align: center; margin-bottom: 8px; }",
+      "#tor h1 { margin: 0; font-family: var(--anzeige); font-size: calc(26px * var(--sk)); letter-spacing: -.02em; color: var(--ink); }",
+      "#tor .tor-kopf p { margin: 0; color: var(--grau); font-size: calc(14.5px * var(--sk)); line-height: 1.5; }",
+      "#tor .eingabe { height: 46px; padding: 0 14px; border-radius: 12px; background: var(--panel); font-size: max(16px, calc(15px * var(--sk))); }",
+      "#tor .eingabe:focus { border-color: var(--akzent); }",
+      "#tor .knopf { height: 46px; border-radius: 12px; width: 100%; font-size: calc(15px * var(--sk)); }",
+      "#tor .tor-neu { align-self: center; background: none; border: none; color: var(--akzent); font-size: calc(14px * var(--sk)); padding: 6px; }",
+      "#tor .tor-meldung { margin: 0; min-height: 1.4em; text-align: center; color: var(--ink2); font-size: calc(13.5px * var(--sk)); line-height: 1.5; }",
+      "#tor .tor-meldung:empty { display: none; }",
+      ".kontostand[data-ok]::before { content: \"\"; display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 8px; vertical-align: 1px; background: var(--grau); }",
+      ".kontostand[data-ok=\"ja\"]::before { background: var(--gruen); }",
+      ".kontostand[data-ok=\"nein\"]::before { background: var(--rot); }"
+    ].join("\n");
+    document.head.appendChild(torStil);
+    k.tor = function () {
+      var el = document.getElementById("tor");
+      if (!torAn) {
+        document.documentElement.removeAttribute("data-tor");
+        if (el) { el.remove(); }
+        return;
+      }
+      document.documentElement.setAttribute("data-tor", "ja");
+      if (!el) {
+        el = document.createElement("div");
+        el.id = "tor";
+        el.innerHTML = '<form class="tor-karte" novalidate onsubmit="return false">'
+          + '<div class="tor-kopf">' + ZEICHEN_KLAR_GROSS + "<h1>Klar</h1><p>Melde dich an – dann ist dein Stand auf all deinen Geräten.</p></div>"
+          + '<input class="eingabe" id="kmail" type="email" autocomplete="email" placeholder="E-Mail" aria-label="E-Mail">'
+          + '<input class="eingabe" id="kpw" type="password" autocomplete="current-password" placeholder="Passwort" aria-label="Passwort">'
+          + '<button type="button" class="knopf" data-ktu="an">Anmelden</button>'
+          + '<p class="tor-meldung" id="tormeldung" role="status"></p>'
+          + '<button type="button" class="tor-neu" data-ktu="neu">Neu hier? Konto anlegen</button>'
+          + "</form>";
+        document.body.appendChild(el);
+      }
+      var m = document.getElementById("tormeldung");
+      if (m) { m.textContent = !k.bereit && !k.meldung ? "Wird geladen …" : (k.meldung || ""); }
+      Array.prototype.forEach.call(el.querySelectorAll("button[data-ktu]"), function (b) { b.disabled = !k.bereit || k.arbeitet; });
     };
     return k;
   })();
@@ -6615,10 +6645,8 @@ html:has(.mfenster) #hinweis { display: none !important; }
     var b = ev.target && ev.target.closest ? ev.target.closest("button[data-ktu]") : null;
     if (!b || !KONTO) { return; }
     if (b.dataset.ktu === "ab") { KONTO.abmelden(); return; }
-    if (b.dataset.ktu === "hoch") { KONTO.hoch(); return; }
-    if (b.dataset.ktu === "runter") { KONTO.runter(); return; }
     var mail = (document.getElementById("kmail") || {}).value || "", pw = (document.getElementById("kpw") || {}).value || "";
-    if (!mail.trim() || !pw) { KONTO.meldung = "E-Mail und Passwort eintragen."; zeichnen(); return; }
+    if (!mail.trim() || !pw) { KONTO.meldung = "E-Mail und Passwort eintragen."; KONTO.tor(); return; }
     KONTO.anmelden(mail.trim(), pw, b.dataset.ktu === "neu");
   });
   document.addEventListener("keydown", function (ev) {
@@ -6674,8 +6702,8 @@ html:has(.mfenster) #hinweis { display: none !important; }
     var t = [];
     t.push('<div class="kasten"><div class="balken">');
     t.push('<button type="button" class="zurueck" data-ptu="zu"><span aria-hidden="true">\u2190</span> Zur\u00fcck</button>');
-    t.push('<span class="lage">' + (KONTO ? "Abgleich und Sicherung" : "Sicherungen") + "</span></div>");
-    if (KONTO) { t.push(KONTO.fach()); }
+    t.push('<span class="lage">' + (KONTO ? "Konto" : "Sicherungen") + "</span></div>");
+    if (KONTO) { t.push(KONTO.fach()); } else {
     t.push('<div class="fach"><span class="name">' + (LOKAL ? "Als Datei" : "Wie gesichert wird") + "</span>");
     if (LOKAL) {
       t.push(wolke ? "<p>Zusätzlich zum Konto lässt sich der Stand als Datei sichern und wieder laden.</p>"
@@ -6695,7 +6723,9 @@ html:has(.mfenster) #hinweis { display: none !important; }
       t.push('<p>Die laufende Sicherung ist in dieser Ansicht nicht verf\u00fcgbar. Der Stand liegt nur im Zwischenspeicher dieses Browsers und in der ver\u00f6ffentlichten Seite.</p>');
     }
     if (!LOKAL) { t.push("</div>"); }
-    t.push('<div class="fach"><span class="name">Stände</span>');
+    }
+    t.push('<div class="fach"><span class="name">' + (KONTO ? "Frühere Stände" : "Stände") + "</span>");
+    if (KONTO) { t.push("<p>Klar legt regelmäßig einen Stand zurück. Falls mal etwas schiefgeht, holst du hier einen früheren zurück.</p>"); }
     if (sicherLaedt) {
       t.push("<p>Wird geladen \u2026</p>");
     } else if (!sicherListe || !sicherListe.length) {
@@ -10554,7 +10584,7 @@ html:has(.mfenster) #hinweis { display: none !important; }
       t.push('<button type="button" data-mtu="lernen">Gelernt' + (wartend ? '<span class="zahl" style="margin-left:auto;color:var(--akzent)">' + wartend + "</span>" : "") + "</button>");
     }
     t.push('<button type="button" data-mtu="reihen">Reihen verwalten</button>');
-    t.push('<button type="button" data-mtu="sicher">' + (KONTO ? "Abgleich und Sicherung" : "Sicherungen") + "</button>");
+    t.push('<button type="button" data-mtu="sicher">' + (KONTO ? "Konto" : "Sicherungen") + "</button>");
     t.push('<button type="button" data-mtu="bruecke">Claude-Brücke</button>');
     t.push('<span class="menuname">Farben</span>');
     t.push('<div class="themawahl" role="group" aria-label="Darstellung">');
@@ -12363,10 +12393,9 @@ if(window.__suche){sf.value=window.__suche;suchen(window.__suche,true)}
        längerer Pause (Safari) leeren. */
     try { if (navigator.storage && navigator.storage.persist) { navigator.storage.persist().catch(function () {}); } } catch (e) {}
     try {
-      if (!localStorage.getItem("klar.begruesst")) {
+      if (!KONTO && !localStorage.getItem("klar.begruesst")) {
         localStorage.setItem("klar.begruesst", "ja");
-        hinweisZeigen(KONTO ? "Unter Abgleich und Sicherung im Menü meldest du dich an – dann hast du auf Handy und Mac denselben Stand."
-          : "Deine Aufgaben bleiben in diesem Browser auf diesem Gerät. Unter Sicherungen im Menü kannst du sie als Datei sichern.");
+        hinweisZeigen("Deine Aufgaben bleiben in diesem Browser auf diesem Gerät. Unter Sicherungen im Menü kannst du sie als Datei sichern.");
       }
     } catch (e) {}
   } else {

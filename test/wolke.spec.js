@@ -89,14 +89,20 @@ function speicher() {
   return { geraet, zeilen, stoerung };
 }
 
+/* Anmelden auf der Anmeldeseite, die Klar ohne Sitzung zeigt */
 async function konto(page, mail, neu) {
-  await page.locator('#marke').click();
-  await page.locator('[data-mtu="sicher"]').click();
+  await expect(page.locator('#tor')).toBeVisible();
   await page.locator('#kmail').fill(mail);
   await page.locator('#kpw').fill('geheim123');
-  await page.locator(`[data-ktu="${neu ? 'neu' : 'an'}"]`).click();
-  await expect(page.getByText('Angemeldet als')).toBeVisible();
-  await page.locator('[data-ptu="zu"]').first().click();
+  await page.locator(`[data-ktu="${neu ? 'neu' : 'an'}"]:enabled`).click();
+  await expect(page.locator('#tor')).toHaveCount(0);
+  await expect(page.locator('#app')).toBeVisible();
+}
+async function abmelden(page) {
+  await page.locator('#marke').click();
+  await page.locator('[data-mtu="sicher"]').click();
+  await page.locator('[data-ktu="ab"]').click();
+  await expect(page.locator('#tor')).toBeVisible({ timeout: 15_000 });
 }
 
 async function aufgabe(page, titel) {
@@ -113,11 +119,8 @@ test('Mac und Handy haben live denselben Stand', async ({ browser }, info) => {
   const mac = await s.geraet(browser, { viewport: { width: 1360, height: 860 } });
   const handy = await s.geraet(browser, { ...devices['iPhone 13'], defaultBrowserType: undefined });
 
-  /* Vorher nur auf dem Mac angelegt – geht beim ersten Anmelden ins Konto */
-  await aufgabe(mac.page, 'Schon vorher auf dem Mac');
   await konto(mac.page, 'lukas@test.de', true);
   await konto(handy.page, 'lukas@test.de', false);
-  await expect(handy.page.getByText('Schon vorher auf dem Mac').first()).toBeVisible({ timeout: 10_000 });
 
   await aufgabe(mac.page, 'Neu am Mac');
   await expect(handy.page.getByText('Neu am Mac').first()).toBeVisible({ timeout: 10_000 });
@@ -143,18 +146,13 @@ test('anderes Konto auf demselben Gerät bekommt die alten Daten nicht', async (
   const g = await s.geraet(browser, { viewport: { width: 1360, height: 860 } });
   await konto(g.page, 'erste@test.de', true);
   await aufgabe(g.page, 'Gehört dem ersten Konto');
-  await g.page.waitForTimeout(2600);
-  await g.page.locator('#marke').click();
-  await g.page.locator('[data-mtu="sicher"]').click();
-  await g.page.locator('[data-ktu="ab"]').click();
-  await g.page.locator('#kmail').fill('zweite@test.de');
-  await g.page.locator('#kpw').fill('geheim123');
-  await g.page.locator('[data-ktu="neu"]').click();
-  await expect(g.page.getByText('Angemeldet als')).toBeVisible();
+  await abmelden(g.page);
+  await konto(g.page, 'zweite@test.de', true);
+  await aufgabe(g.page, 'Gehört dem zweiten Konto');
   await g.page.waitForTimeout(2600);
   const zweite = [...s.zeilen.values()].filter(r => r.user_id === 'u-zweitetestde' && r.sammlung === 'stand');
+  expect(zweite.length).toBe(1);
   expect(zweite.every(r => !r.daten.stand.includes('Gehört dem ersten Konto'))).toBe(true);
-  await g.page.locator('[data-ptu="zu"]').first().click();
   await expect(g.page.getByText('Gehört dem ersten Konto')).toHaveCount(0);
   expect(g.fehler).toEqual([]);
   await g.ctx.close();
@@ -165,19 +163,18 @@ test('ein leeres Gerät überschreibt nie einen echten Stand', async ({ browser 
   const s = speicher();
   const mac = await s.geraet(browser, { viewport: { width: 1360, height: 860 } });
   const handy = await s.geraet(browser, { ...devices['iPhone 13'], defaultBrowserType: undefined });
-  /* Mac hat schon Daten, ist aber noch nicht angemeldet */
+  /* Der Mac hat einen echten Stand im Konto … */
+  await konto(mac.page, 'lukas@test.de', true);
   await aufgabe(mac.page, 'Echter Stand am Mac');
-  /* App einmal zu und wieder auf – so wie im echten Leben zwischen zwei Tagen */
+  await mac.page.waitForTimeout(2600);
+  /* … App zu und wieder auf, wie zwischen zwei Tagen … */
   await mac.page.reload();
   await expect(mac.page.getByText('Echter Stand am Mac').first()).toBeVisible();
-  /* Das leere Handy meldet sich zuerst an … */
-  await konto(handy.page, 'lukas@test.de', true);
-  await handy.page.waitForTimeout(2600);
-  /* … danach der Mac: sein Stand muss bleiben und aufs Handy wandern */
-  await konto(mac.page, 'lukas@test.de', false);
+  /* … dann kommt ein leeres Handy dazu: es bekommt den Stand und überschreibt ihn nicht */
+  await konto(handy.page, 'lukas@test.de', false);
+  await expect(handy.page.getByText('Echter Stand am Mac').first()).toBeVisible({ timeout: 10_000 });
   await mac.page.waitForTimeout(3000);
   await expect(mac.page.getByText('Echter Stand am Mac').first()).toBeVisible();
-  await expect(handy.page.getByText('Echter Stand am Mac').first()).toBeVisible({ timeout: 10_000 });
   expect(mac.fehler).toEqual([]);
   await mac.ctx.close(); await handy.ctx.close();
 });
@@ -198,7 +195,7 @@ test('Stand aus dem alten Klar per Claude-Brücke übernehmen, landet auf dem Ha
   await expect(handy.page.getByText('Testkunde Muster: Angebot Hausrat schicken').first()).toBeVisible({ timeout: 10_000 });
   await mac.page.locator('#marke').click();
   await mac.page.locator('[data-mtu="sicher"]').click();
-  await expect(mac.page.getByText('Abgeglichen.')).toBeVisible({ timeout: 10_000 });
+  await expect(mac.page.getByText('Alles gespeichert.')).toBeVisible({ timeout: 10_000 });
   expect(mac.fehler).toEqual([]); expect(handy.fehler).toEqual([]);
   await mac.ctx.close(); await handy.ctx.close();
 });
@@ -222,23 +219,39 @@ test('ein Lesefehler kappt den Abgleich nicht', async ({ browser }, info) => {
   await mac.ctx.close(); await handy.ctx.close();
 });
 
-test('von Hand: Stand ins Konto und aus dem Konto holen', async ({ browser }, info) => {
+test('ohne Anmeldung zeigt Klar nur die Anmeldeseite', async ({ browser }, info) => {
   test.skip(info.project.name !== 'mac', 'baut seine Geräte selbst');
   const s = speicher();
-  const mac = await s.geraet(browser, { viewport: { width: 1360, height: 860 } });
-  const handy = await s.geraet(browser, { ...devices['iPhone 13'], defaultBrowserType: undefined });
-  await konto(mac.page, 'lukas@test.de', true);
-  await aufgabe(mac.page, 'Vom Mac festgeschrieben');
-  await mac.page.locator('#marke').click(); await mac.page.locator('[data-mtu="sicher"]').click();
-  await expect(mac.page.getByText(/Im Konto/)).toBeVisible();
-  await mac.page.locator('[data-ktu="hoch"]').click();
-  await expect(mac.page.getByText(/1 Aufgaben · Stand .* · von /)).toBeVisible({ timeout: 10_000 });
-  await konto(handy.page, 'lukas@test.de', false);
-  await handy.page.locator('#marke').click(); await handy.page.locator('[data-mtu="sicher"]').click();
-  await handy.page.locator('[data-ktu="runter"]').click();
-  await expect(handy.page.getByText('Stand aus dem Konto geholt: 1 Aufgaben.')).toBeVisible();
-  await handy.page.locator('[data-ptu="zu"]').first().click();
-  await expect(handy.page.getByText('Vom Mac festgeschrieben').first()).toBeVisible();
-  expect(mac.fehler).toEqual([]); expect(handy.fehler).toEqual([]);
-  await mac.ctx.close(); await handy.ctx.close();
+  const g = await s.geraet(browser, { viewport: { width: 1360, height: 860 } });
+  await expect(g.page.locator('#tor')).toBeVisible();
+  await expect(g.page.locator('#app')).toBeHidden();
+  await expect(g.page.locator('#fab')).toBeHidden();
+  /* falsches Passwort: verständliche Meldung, bleibt auf der Anmeldeseite */
+  await konto(g.page, 'lukas@test.de', true);
+  await abmelden(g.page);
+  await g.page.locator('#kmail').fill('lukas@test.de');
+  await g.page.locator('#kpw').fill('falsch');
+  await g.page.locator('[data-ktu="an"]:enabled').click();
+  await expect(g.page.getByText('E-Mail oder Passwort stimmt nicht.')).toBeVisible();
+  await expect(g.page.locator('#app')).toBeHidden();
+  expect(g.fehler).toEqual([]);
+  await g.ctx.close();
+});
+
+test('Abmelden wartet aufs Speichern, leert das Gerät, Anmelden bringt alles zurück', async ({ browser }, info) => {
+  test.skip(info.project.name !== 'mac', 'baut seine Geräte selbst');
+  const s = speicher();
+  const g = await s.geraet(browser, { viewport: { width: 1360, height: 860 } });
+  await konto(g.page, 'lukas@test.de', true);
+  await aufgabe(g.page, 'Kurz vor dem Abmelden');
+  /* sofort abmelden, ohne die zwei Sekunden abzuwarten */
+  await abmelden(g.page);
+  const lokal = await g.page.evaluate(() => localStorage.getItem('ideenbrett.entwurf'));
+  expect(lokal).toBeNull();
+  const imKonto = [...s.zeilen.values()].find(r => r.sammlung === 'stand');
+  expect(imKonto.daten.stand).toContain('Kurz vor dem Abmelden');
+  await konto(g.page, 'lukas@test.de', false);
+  await expect(g.page.getByText('Kurz vor dem Abmelden').first()).toBeVisible({ timeout: 10_000 });
+  expect(g.fehler).toEqual([]);
+  await g.ctx.close();
 });

@@ -14,6 +14,9 @@ Sprache in App, Kommentaren und Commits: **Deutsch**.
   Ziel aus `wolke.json`). `KONTO` bietet dieselben Griffe wie der Artifact-Speicher (`doc().set/get/delete/onSnapshot`,
   `collection().orderBy().limit().get()`) und wird mit `wolkeVerbinden()` untergeschoben – Abgleich, Konflikte und Sicherungen
   sind derselbe Code wie im Artifact. Test: `test/wolke.spec.js` (Supabase nachgebaut, zwei Geräte).
+- Mit `wolke.json` ist die öffentliche Fassung kontogebunden: ohne Sitzung nur die Anmeldeseite (`#tor`, `KONTO.tor()`), danach speichert
+  Klar von selbst ins Konto. Kein Gerät-Konto-Abgleich in der Oberfläche, keine Datei-Sicherung; Menü → Konto zeigt Status, Abmelden
+  (wartet aufs Speichern, leert dann das Gerät) und frühere Stände. Ohne `wolke.json` (Tests unter `/lokal`) bleibt der reine Browser-Modus.
 - `wolke.json` enthält nur den öffentlichen Schlüssel (anon). Den geheimen Schlüssel (service_role) nie ins Repo oder in die Seite.
 - Neue Funktionen, die Claude oder die Datenbank brauchen, in der öffentlichen Fassung ausblenden (`if (!LOKAL)`).
 - Das Repo ist öffentlich: keine Kundennamen, auch nicht in Platzhaltern oder Beispielen.

@@ -11,9 +11,9 @@ Aufgaben, Mitschriften und Übersicht in einer ruhigen Liste.
 
 ## Deine Daten
 
-Klar startet leer. Ohne Konto bleibt alles im Browser des Geräts, auf dem du es anlegst. Mit Konto (Menü → **Abgleich und Sicherung**) hast du auf allen Geräten denselben Stand; jede Änderung ist nach wenigen Sekunden überall. Jedes Konto sieht nur seine eigenen Daten.
+Klar braucht ein Konto: einmal anmelden, dann gehört dein Stand deinem Konto. Jede Änderung wird nach wenigen Sekunden automatisch gespeichert und ist auf jedem Gerät da, auf dem du angemeldet bist. Ohne Netz arbeitest du mit dem Stand auf dem Gerät weiter, gespeichert wird, sobald du wieder online bist. Jedes Konto sieht nur seine eigenen Daten.
 
-Zusätzlich lässt sich der Stand dort als Datei sichern und wieder laden.
+Unter Menü → **Konto** stehen der Status („Alles gespeichert“), Abmelden und frühere Stände zum Zurückholen. Beim Abmelden wird der Stand vom Gerät gelöscht – er liegt ja im Konto.
 
 ## Abgleich einrichten (einmalig, für den Betreiber)
 
