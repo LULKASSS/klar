@@ -3753,6 +3753,31 @@ html:has(.mfenster) #hinweis { display: none !important; }
       }
       var spalten = [["naechstes", "arbeit", "wartet"], ["heute", "liegt", "mitschriften", "spaeter"]].map(function (r) { return r.map(kartenFuer).join(""); }).filter(Boolean);
       if (spalten.length) { t.push('<div class="spk-feld">' + spalten.map(function (x) { return '<div class="spk-spalte">' + x + "</div>"; }).join("") + "</div>"); }
+      /* 11.10.2026: Ohne Suche und Zeitraum war Erledigtes unsichtbar – eine auf
+         „Fertig“ gesetzte Mitschrift schien verschwunden. Jetzt steht am Ende ein
+         zugeklappter Abschnitt mit abgeschlossenen Mitschriften und erledigten Aufgaben. */
+      if (!linse) {
+        var fertigA = zustand.aufgaben.filter(function (a) { return a.status === "erledigt"; })
+          .sort(function (x, y) { return String(y.erledigtAm).localeCompare(String(x.erledigtAm)); });
+        var fertigM = (zustand.mitschriften || []).filter(function (mm) { return mStatus(mm) === "abgeschlossen"; })
+          .sort(function (x, y) { return String(y.erstellt || y.am).localeCompare(String(x.erstellt || x.am)); });
+        if (fertigA.length || fertigM.length) {
+          var teile = [];
+          if (fertigM.length) { teile.push(fertigM.length + (fertigM.length === 1 ? " Mitschrift" : " Mitschriften") + ", zuletzt " + (fertigM[0].titel || "ohne Titel")); }
+          if (fertigA.length) { teile.push(fertigA.length + (fertigA.length === 1 ? " Aufgabe" : " Aufgaben") + ", zuletzt " + (fertigA[0].titel || "")); }
+          t.push('<section class="fgruppe" id="spur-fertig"><h2>Erledigt <span class="n">' + (fertigA.length + fertigM.length) + '</span><span class="hint">abgeschlossene Mitschriften und erledigte Aufgaben</span></h2>');
+          if (!auf.fertig) {
+            t.push('<button type="button" class="zusammen" data-aufklappen="fertig"><span>' + esc(teile.join(" · ")) + '</span><span class="pfeil" aria-hidden="true">▾</span></button>');
+          } else {
+            if (fertigM.length) { t.push('<div class="spk-liste">' + (auf.alle_fertigm ? fertigM : fertigM.slice(0, 5)).map(mZeile).join("") + "</div>"); }
+            if (fertigM.length > 5) { t.push('<button type="button" class="fk-mehr" data-aufklappen="alle_fertigm">' + (auf.alle_fertigm ? "weniger Mitschriften" : "alle " + fertigM.length + " Mitschriften") + "</button>"); }
+            if (fertigA.length) { t.push('<div class="tafel">' + (auf.alle_fertiga ? fertigA : fertigA.slice(0, 10)).map(aufgabenZeile).join("") + "</div>"); }
+            if (fertigA.length > 10) { t.push('<button type="button" class="fk-mehr" data-aufklappen="alle_fertiga">' + (auf.alle_fertiga ? "weniger Aufgaben" : "alle " + fertigA.length + " Aufgaben") + "</button>"); }
+            t.push('<button type="button" class="fk-mehr" data-aufklappen="fertig">einklappen</button>');
+          }
+          t.push("</section>");
+        }
+      }
       if (linse && erledigte.length) {
         t.push('<section class="fgruppe" id="spur-erledigt"><h2>Erledigt <span class="n">' + erledigte.length + '</span><span class="hint">' + (linse === "zeit" ? "im Zeitraum angefasst" : "zu diesem Suchwort") + "</span></h2>");
         t.push('<div class="tafel">' + (auf.erledigt ? erledigte : erledigte.slice(0, 5)).map(aufgabenZeile).join("") + "</div>");

@@ -92,3 +92,24 @@ test('Claude-Brücke übernimmt alles, auch Gruppen', async ({ page }) => {
   expect(z.tagwerk['2026-10-01']).toBe(3);
   expect(problems).toEqual([]);
 });
+
+test('abgeschlossene Mitschriften und erledigte Aufgaben bleiben auffindbar @mobil', async ({ page }) => {
+  const problems = await open(page);
+  const stand = {
+    fassung: 12, cluster: [], reihen: [], gruppen: [], tagwerkStart: '2026-09-01T00:00:00.000Z', zuletzt: '2026-10-10T10:00:00.000Z',
+    aufgaben: [
+      { id: 'a-o', titel: 'Noch offen', status: 'offen', prio: 2, punkte: [], verlauf: [] },
+      { id: 'a-e', titel: 'Schon erledigt', status: 'erledigt', erledigtAm: '2026-10-10T09:00:00.000Z', prio: 2, punkte: [], verlauf: [] }
+    ],
+    mitschriften: [{ id: 'm-a', titel: 'Termin von gestern', teilnehmer: '', html: '<p>Inhalt der Mitschrift</p>', am: '2026-10-10', erstellt: '2026-10-10T09:10:00.000Z', zeilen: [], mstatus: 'abgeschlossen', verarbeitetAm: '2026-10-11T06:40:00.000Z', auswertung: null }]
+  };
+  await page.locator('#marke').click();
+  await page.locator('[data-mtu="bruecke"]').click();
+  await page.locator('#breingabe').fill(JSON.stringify(stand));
+  await page.locator('[data-btu="rein"]').click();
+  await expect(page.getByText(/1 Mitschrift, zuletzt Termin von gestern · 1 Aufgabe, zuletzt Schon erledigt/)).toBeVisible();
+  await page.locator('[data-aufklappen="fertig"]').first().click();
+  await page.getByText('Termin von gestern').first().click();
+  await expect(page.getByText('Inhalt der Mitschrift')).toBeVisible();
+  expect(problems).toEqual([]);
+});
