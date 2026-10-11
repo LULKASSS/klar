@@ -2847,6 +2847,15 @@ html:has(.mfenster) #hinweis { display: none !important; }
 .spk .zusammen { border: none; border-top: 1px solid var(--linie2); border-radius: 0; background: none; padding: 11px 16px 13px; }
 .spk-liste { display: flex; flex-direction: column; padding: 0 6px 6px; }
 .spk-liste .mschrift { border: none; border-radius: 10px; background: transparent; }
+/* Der Haken steht genau unter dem der Aufgaben (nachgemessen 11.10.2026). */
+.mzeile { display: flex; align-items: center; gap: 2px; padding-left: var(--pad); border-bottom: none !important; }
+@media (max-width: 720px) { .mzeile { padding-left: calc(var(--pad) - 3px); } }
+.mzeile > .haken { margin-left: 0; }
+.mzeile > .mschrift { flex: 1 1 auto; min-width: 0; }
+.spk-liste .mzeile + .mzeile { border-top: 1px solid var(--linie2); }
+.mzeile[data-erledigt="ja"] > .haken { background: var(--gruen-weich); border-color: var(--gruen); }
+.mzeile[data-erledigt="ja"] > .haken svg { opacity: 1; }
+.mzeile[data-erledigt="ja"] .otitel { text-decoration: line-through; text-decoration-color: color-mix(in srgb, var(--gruen) 55%, transparent); color: var(--ink2); }
 .spk-liste .mschrift + .mschrift { border-top: 1px solid var(--linie2); border-radius: 0; }
 @media (prefers-reduced-motion: no-preference) {
   .landing.erst .spk { animation: spkRein .42s var(--ease-aus) both; }
@@ -3845,12 +3854,22 @@ html:has(.mfenster) #hinweis { display: none !important; }
     }
     function mPille(m) {
       var s = mStatus(m);
+      /* 11.10.2026, eigene App: Mitschriften sind offen, bis sie abgehakt werden – wie Aufgaben. */
+      if (LOKAL && s === "entwurf") { return ""; }
+      if (LOKAL && s === "abgeschlossen") { return '<span class="wflag" data-s="erl">abgehakt</span>'; }
       if (s === "entwurf") { return '<span class="wflag">Entwurf</span>'; }
       if (s === "auswertung") { return '<span class="wflag" data-s="lauf">' + (m.hinweis ? "wartet auf Auswertung" : "wird ausgewertet …") + "</span>"; }
       if (s === "freigabe") { var n = mOffenePunkte(m); return '<span class="wflag" data-s="dran">' + n + (n === 1 ? " Vorschlag" : " Vorschläge") + " absegnen</span>"; }
       return '<span class="wflag" data-s="erl">abgeschlossen</span>';
     }
     function mZeile(m) {
+      if (LOKAL) {
+        var ab = mStatus(m) === "abgeschlossen";
+        return '<div class="mzeile" data-erledigt="' + (ab ? "ja" : "nein") + '"><button type="button" class="haken" data-mhaken="' + esc(m.id) + '" aria-label="' + (ab ? "Wieder aufmachen" : "Abhaken") + '" title="' + (ab ? "Wieder aufmachen" : "Abhaken") + '">' + HAKEN + "</button>" + mZeileKnopf(m) + "</div>";
+      }
+      return mZeileKnopf(m);
+    }
+    function mZeileKnopf(m) {
       var d = m.erstellt ? new Date(m.erstellt) : dat(m.am);
       return '<button type="button" class="mschrift" data-mopen="' + esc(m.id) + '"><span class="m-ikon" aria-hidden="true"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3.2h7.6L19 8.6v12.2H6z"></path><path d="M13.4 3.2v5.4H19"></path><path d="M9 13h6"></path><path d="M9 16.6h4"></path></svg></span>'
         + '<span class="otext"><span class="otitel">' + esc(m.titel || "Ohne Titel") + '</span><span class="ounter">' + esc(lang(lokal(d.toISOString()))) + (m.teilnehmer ? " · " + esc(m.teilnehmer) : "") + "</span></span>" + mPille(m) + "</button>";
@@ -3861,6 +3880,13 @@ html:has(.mfenster) #hinweis { display: none !important; }
       zustand.mitschriften.push(m);
       mOffen = m.id; mNeu = true; zeichnen();
       setTimeout(function () { var f = document.getElementById(titel ? "m-text" : "m-titel"); if (f) { f.focus(); } }, 30);
+    }
+    function mAbhaken(m, ab) {
+      if (!m) { return; }
+      if (ab) { m.mstatus = "abgeschlossen"; m.verarbeitetAm = new Date().toISOString(); }
+      else { m.mstatus = "entwurf"; }
+      speichern(); zeichnen();
+      hinweisZeigen(ab ? "Mitschrift abgehakt – sie steht jetzt unten unter Erledigt." : "Mitschrift wieder offen.");
     }
     function mSchliessen() {
       mSyncJetzt(); var tnE = document.getElementById("m-tn-ein");
@@ -5356,7 +5382,9 @@ html:has(.mfenster) #hinweis { display: none !important; }
         t.push("</div>");
       }
       t.push('<div class="m-fuss">');
-      if (s === "entwurf") { t.push('<span class="m-tipp"></span><button type="button" class="knopf" data-mfertig="1">' + (LOKAL ? "Fertig" : "Fertig, auswerten") + '</button>'); }
+      if (LOKAL && s === "entwurf") { t.push('<button type="button" class="knopf-leise" data-mabhaken="1">Abhaken</button><span class="m-tipp"></span><button type="button" class="knopf" data-mzu="1">Schließen</button>'); }
+      else if (LOKAL && s === "abgeschlossen") { t.push('<button type="button" class="knopf-leise" data-maufmachen="1">Wieder aufmachen</button><span class="m-tipp"></span><button type="button" class="knopf" data-mzu="1">Schließen</button>'); }
+      else if (s === "entwurf") { t.push('<span class="m-tipp"></span><button type="button" class="knopf" data-mfertig="1">' + (LOKAL ? "Fertig" : "Fertig, auswerten") + '</button>'); }
       else if (s === "abgeschlossen") { t.push('<span class="m-tipp"></span><button type="button" class="knopf-leise" data-mzu="1">Schließen</button>'); }
       else { t.push('<button type="button" class="knopf-klein" data-mwieder="1">Nochmal bearbeiten</button><span class="m-tipp"></span><button type="button" class="knopf-leise" data-mzu="1">Schließen</button>'); }
       t.push("</div></section></div>");
@@ -5416,7 +5444,10 @@ html:has(.mfenster) #hinweis { display: none !important; }
     function mKlick(ev) {
       var b, m = mOffen ? mFinde(mOffen) : null;
       if ((b = ev.target.closest("[data-mopen]"))) { mOffen = b.dataset.mopen; mNeu = false; zeichnen(); return true; }
+      if ((b = ev.target.closest("[data-mhaken]"))) { var mh = mFinde(b.dataset.mhaken); mAbhaken(mh, mh && mStatus(mh) !== "abgeschlossen"); return true; }
       if (!m) { return false; }
+      if (ev.target.closest("[data-mabhaken]")) { mSyncJetzt(); mOffen = null; mNeu = false; mAbhaken(m, true); return true; }
+      if (ev.target.closest("[data-maufmachen]")) { mAbhaken(m, false); return true; }
       if (ev.target.closest("[data-mzu]")) { mSchliessen(); return true; }
       if ((b = ev.target.closest("[data-fmt]"))) { edFormat(b.dataset.fmt); return true; }
       if ((b = ev.target.closest("[data-tnweg]"))) { var tl = tnListe(m); tl.splice(+b.dataset.tnweg, 1); m.teilnehmer = tl.join(", "); tnNeu(m); var te = document.getElementById("m-tn-ein"); if (te) { te.focus(); } return true; }

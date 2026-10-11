@@ -113,3 +113,36 @@ test('abgeschlossene Mitschriften und erledigte Aufgaben bleiben auffindbar @mob
   await expect(page.getByText('Inhalt der Mitschrift')).toBeVisible();
   expect(problems).toEqual([]);
 });
+
+test('Mitschriften bleiben offen und bearbeitbar, bis man sie abhakt @mobil', async ({ page }) => {
+  const problems = await open(page);
+  const stand = {
+    fassung: 12, cluster: [], reihen: [], gruppen: [], tagwerkStart: '2026-09-01T00:00:00.000Z', zuletzt: '2026-10-10T10:00:00.000Z',
+    aufgaben: [{ id: 'a-o', titel: 'Noch offen', status: 'offen', prio: 2, punkte: [], verlauf: [] }],
+    mitschriften: [{ id: 'm-o', titel: 'Laufender Termin', teilnehmer: '', html: '<p>Erste Notiz</p>', am: '2026-10-10', erstellt: '2026-10-10T09:10:00.000Z', zeilen: [], mstatus: 'entwurf', verarbeitetAm: null, auswertung: null }]
+  };
+  await page.locator('#menuknopf').click();
+  await page.locator('[data-mtu="bruecke"]').click();
+  await page.locator('#breingabe').fill(JSON.stringify(stand));
+  await page.locator('[data-btu="rein"]').click();
+  const zeile = page.locator('.mzeile', { hasText: 'Laufender Termin' });
+  /* öffnen, nichts ist „Fertig“, schließen – bleibt offen */
+  await zeile.locator('.mschrift').click();
+  await expect(page.locator('[data-mfertig]')).toHaveCount(0);
+  await expect(page.locator('#m-text')).toHaveAttribute('contenteditable', 'true');
+  await page.locator('.m-fuss [data-mzu]').click();
+  await expect(zeile.locator('.haken')).toHaveAttribute('aria-label', 'Abhaken');
+  /* abhaken wie eine Aufgabe → unter Erledigt */
+  await zeile.locator('.haken').click();
+  await expect(page.getByText('Mitschrift abgehakt')).toBeVisible();
+  await page.locator('[data-aufklappen="fertig"]').first().click();
+  const erl = page.locator('#spur-fertig .mzeile', { hasText: 'Laufender Termin' });
+  await expect(erl).toHaveAttribute('data-erledigt', 'ja');
+  /* wieder aufmachen über den Haken, dann ist sie wieder bearbeitbar */
+  await erl.locator('.haken').click();
+  await expect(page.locator('#spur-fertig .mzeile', { hasText: 'Laufender Termin' })).toHaveCount(0);
+  await page.locator('.mzeile', { hasText: 'Laufender Termin' }).locator('.mschrift').click();
+  await expect(page.locator('#m-text')).toHaveAttribute('contenteditable', 'true');
+  await expect(page.locator('[data-mabhaken]')).toBeVisible();
+  expect(problems).toEqual([]);
+});
