@@ -2081,6 +2081,32 @@ html[data-himmel] #hinweis {
   .haken::before { content: ""; position: absolute; inset: -11px; }
   .untennav { min-height: 44px; }
 }
+
+/* ---- 11.10.2026: Kein Kopf mit Zeichen oben links ----
+   Das Klar-Zeichen samt Ort und Pfeilchen nahm eine eigene Zeile weg. Das
+   Menü sitzt jetzt unten rechts neben dem Plus (#menuknopf). Die Kopfzeile
+   klappt zu, solange nichts darin steht (Sichern, Suche, Reiter). */
+.marke, .himmelmarke { display: none !important; }
+.kopf-oben { padding: 0 !important; }
+.kopf-oben:has(> #standpunkt:not([hidden])),
+.kopf-oben:has(> .kopfleiste:not(:empty)),
+.app[data-suche="auf"] .kopf-oben,
+html:not([data-modus="start"]) .kopf-oben { padding: 9px 0 5px !important; }
+.app { padding-top: calc(10px + env(safe-area-inset-top, 0px)); }
+.menuknopf {
+  display: flex; align-items: center; justify-content: center; flex: 0 0 44px;
+  width: 44px; height: 44px; padding: 0; border-radius: 50%;
+  background: var(--glas); color: var(--ink2); border: 1px solid var(--rand-linie);
+  -webkit-backdrop-filter: blur(18px) saturate(1.4); backdrop-filter: blur(18px) saturate(1.4);
+  box-shadow: 0 16px 34px -18px rgba(18,18,28,.45), 0 2px 6px rgba(18,18,28,.07);
+}
+.menuknopf[aria-expanded="true"] { color: var(--akzent); border-color: var(--akzent); }
+@media (prefers-reduced-motion: no-preference) {
+  .menuknopf { transition: transform .16s var(--ease-aus), color .15s ease, border-color .15s ease; }
+  .menuknopf:active { transform: scale(.93); }
+}
+@media (hover: hover) and (pointer: fine) { .menuknopf:hover { color: var(--akzent); border-color: var(--akzent); } }
+.menu.hauptmenu { transform-origin: calc(100% - 22px) calc(100% + 6px); }
 </style>
 </head>
 <body>
@@ -10597,22 +10623,29 @@ html:has(.mfenster) #hinweis { display: none !important; }
   function menuBauen() {
     /* Seit 27.09.2026 liegen Aufgaben, Mitschriften und Zeitstrahl in der Leiste unten.
        Das Menü hinter dem Klar-Zeichen hält nur noch die Einstellungen. */
-    var anker = document.getElementById(himmelModus() ? "himmelmarke" : "marke");
-    var r = anker ? anker.getBoundingClientRect() : { left: 8, bottom: 52 };
+    /* 11.10.2026: Kein Kopf mehr mit Zeichen oben links — das Menü hängt am
+       runden Knopf unten rechts und klappt nach oben auf. */
+    var anker = document.getElementById("menuknopf");
+    var r = anker && anker.offsetWidth ? anker.getBoundingClientRect()
+      : { right: window.innerWidth - 16, top: window.innerHeight - 72 };
     var breite = 300;
-    var x = Math.round(Math.max(8, Math.min(r.left, window.innerWidth - breite - 8)));
+    var x = Math.round(Math.max(8, Math.min(r.right - breite, window.innerWidth - breite - 8)));
+    var unten = Math.round(Math.max(8, window.innerHeight - r.top + 10));
     var offeneA = zustand.aufgaben.filter(function (a) { return a.status !== "erledigt"; }).length;
     var wv = wartende().length;
     var wartend = zustand.lernen.eingang.filter(function (x) { return x.stand !== "ausgewertet"; }).length;
     var t = [];
     t.push('<button type="button" class="menuschicht" data-mtu="zu" aria-label="Schließen"></button>');
-    t.push('<div class="menu hauptmenu" role="menu" style="left:' + x + "px;top:" + Math.round(r.bottom + 8) + 'px">');
+    t.push('<div class="menu hauptmenu" role="menu" style="position:fixed;left:' + x + "px;bottom:" + unten
+      + "px;max-height:calc(100vh - " + (unten + 12) + 'px)">');
     var heuteTxt = "";
     try { heuteTxt = new Date().toLocaleDateString("de-DE", { weekday: "long", day: "numeric", month: "long" }); } catch (e) {}
     t.push('<div class="menukopf">' + ZEICHEN_KLAR_GROSS
       + '<span class="mk-txt"><b>Klar</b><span>' + esc(heuteTxt)
       + (offeneA ? " · " + offeneA + " offen" : "") + "</span></span></div>");
     t.push('<div class="verwalten">');
+    /* Ohne die Ortsanzeige oben links braucht es den Weg zurück hier. */
+    if (modus !== "start") { t.push(navKnopf("start", "Zur Übersicht", "", false, "", "")); }
     if (!LOKAL) {
       t.push('<button type="button" data-mtu="vorschlaege">Vorschläge' + (wv ? '<span class="zahl" style="margin-left:auto;color:var(--akzent)">' + wv + "</span>" : "") + "</button>");
       t.push('<button type="button" data-mtu="lernen">Gelernt' + (wartend ? '<span class="zahl" style="margin-left:auto;color:var(--akzent)">' + wartend + "</span>" : "") + "</button>");
@@ -10667,6 +10700,8 @@ html:has(.mfenster) #hinweis { display: none !important; }
       ort.textContent = namen[modus] || "";
       mk.setAttribute("aria-expanded", menuAuf ? "true" : "false");
     }
+    var mkn = document.getElementById("menuknopf");
+    if (mkn) { mkn.setAttribute("aria-expanded", menuAuf ? "true" : "false"); }
     if (himmelMarke) {
       himmelMarke.querySelector(".ort").textContent = namen[modus] || "";
       himmelMarke.setAttribute("aria-expanded", menuAuf ? "true" : "false");
@@ -11655,6 +11690,15 @@ if(window.__suche){sf.value=window.__suche;suchen(window.__suche,true)}
   untenbereich.appendChild(leiste);
   (document.getElementById("app") || document.body).appendChild(untenbereich);
   var fabKnopf = document.getElementById("fab");
+  /* 11.10.2026: Das Menü (vorher hinter dem Haken oben links) sitzt jetzt
+     als runder Knopf links neben dem Plus. Oben bleibt so die ganze Breite
+     für den Inhalt. */
+  var menuKnopf = document.createElement("button");
+  menuKnopf.type = "button"; menuKnopf.id = "menuknopf"; menuKnopf.className = "menuknopf";
+  menuKnopf.title = "Menü"; menuKnopf.setAttribute("aria-label", "Menü"); menuKnopf.setAttribute("aria-haspopup", "menu");
+  menuKnopf.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.8"></circle><circle cx="12" cy="12" r="1.8"></circle><circle cx="19" cy="12" r="1.8"></circle></svg>';
+  menuKnopf.addEventListener("click", function () { menuAuf = !menuAuf; zeichnen(); });
+  untenbereich.appendChild(menuKnopf);
   if (fabKnopf) { untenbereich.appendChild(fabKnopf); }
   /* Die Bedienung fuer data-nav haengt am Menue, nicht am Dokument — die
      Leiste braucht deshalb ihren eigenen Zuhoerer. (22.09.2026: genau das

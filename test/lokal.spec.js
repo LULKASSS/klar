@@ -19,7 +19,7 @@ async function aufgabeAnlegen(page, titel) {
 }
 
 async function menu(page, was) {
-  await page.locator('#marke').click();
+  await page.locator('#menuknopf').click();
   await page.locator(`[data-mtu="${was}"]`).click();
 }
 
@@ -28,7 +28,7 @@ test('startet leer, ohne Nur-Lesen und ohne Claude-Menüpunkte @mobil @dunkel', 
   await expect(page.getByText('Deine Aufgaben bleiben in diesem Browser')).toBeVisible();
   await expect(page.getByText('Nur-Lesen-Ansicht')).toHaveCount(0);
   await expect(page.getByText('Testkunde Muster')).toHaveCount(0);
-  await page.locator('#marke').click();
+  await page.locator('#menuknopf').click();
   await expect(page.locator('[data-mtu="sicher"]')).toBeVisible();
   await expect(page.locator('[data-mtu="vorschlaege"]')).toHaveCount(0);
   await expect(page.locator('[data-mtu="lernen"]')).toHaveCount(0);
@@ -80,7 +80,7 @@ test('Claude-Brücke übernimmt alles, auch Gruppen', async ({ page }) => {
     cluster: [], mitschriften: [], reihen: [], gruppen: [{ id: 'g-1', name: 'Testgruppe', kurz: [], eltern: [] }],
     tagwerk: { '2026-10-01': 3 }, tagwerkStart: '2026-09-01T00:00:00.000Z', zuletzt: '2026-10-01T10:00:00.000Z'
   };
-  await page.locator('#marke').click();
+  await page.locator('#menuknopf').click();
   await page.locator('[data-mtu="bruecke"]').click();
   await page.locator('#breingabe').fill(JSON.stringify(stand));
   await page.locator('[data-btu="rein"]').click();

@@ -99,7 +99,7 @@ async function konto(page, mail, neu) {
   await expect(page.locator('#app')).toBeVisible();
 }
 async function abmelden(page) {
-  await page.locator('#marke').click();
+  await page.locator('#menuknopf').click();
   await page.locator('[data-mtu="sicher"]').click();
   await page.locator('[data-ktu="ab"]').click();
   await expect(page.locator('#tor')).toBeVisible({ timeout: 15_000 });
@@ -187,13 +187,13 @@ test('Stand aus dem alten Klar per Claude-Brücke übernehmen, landet auf dem Ha
   await konto(mac.page, 'lukas@test.de', true);
   await konto(handy.page, 'lukas@test.de', false);
   const alt = JSON.parse(readFileSync(new URL('./beispiel.json', import.meta.url), 'utf8')).zustand;
-  await mac.page.locator('#marke').click();
+  await mac.page.locator('#menuknopf').click();
   await mac.page.locator('[data-mtu="bruecke"]').click();
   await mac.page.locator('#breingabe').fill(JSON.stringify(alt));
   await mac.page.locator('[data-btu="rein"]').click();
   await expect(mac.page.getByText(/Übernommen: 4 Aufgaben/)).toBeVisible();
   await expect(handy.page.getByText('Testkunde Muster: Angebot Hausrat schicken').first()).toBeVisible({ timeout: 10_000 });
-  await mac.page.locator('#marke').click();
+  await mac.page.locator('#menuknopf').click();
   await mac.page.locator('[data-mtu="sicher"]').click();
   await expect(mac.page.getByText('Alles gespeichert.')).toBeVisible({ timeout: 10_000 });
   expect(mac.fehler).toEqual([]); expect(handy.fehler).toEqual([]);
