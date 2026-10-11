@@ -6,8 +6,10 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { ROOT, SRC, lies } from './teile.mjs';
 
 const svg = readFileSync(ROOT + 'icon/klar.svg', 'utf8');
-/* Homescreen: iOS rundet selbst ab, also die Kachel randlos füllen */
-const voll = svg.replace(/viewBox="0 0 1024 1024"/, 'viewBox="100 100 824 824"').replace(/ rx="18[15]"/g, '');
+/* Ohne Rand, aber mit runden Ecken – so sieht Klar überall gleich aus (Lukas, 11.10.2026).
+ * Nur das Masken-Icon bleibt eckig: Android schneidet es selbst zu. */
+const voll = svg.replace(/viewBox="0 0 1024 1024"/, 'viewBox="100 100 824 824"');
+const eckig = voll.replace(/ rx="18[15]"/g, '');
 const browser = await chromium.launch(process.env.PW_CHROMIUM ? { executablePath: process.env.PW_CHROMIUM } : {});
 async function png(quelle, px) {
   const p = await browser.newPage({ viewport: { width: px, height: px } });
@@ -18,7 +20,7 @@ async function png(quelle, px) {
 }
 writeFileSync(ROOT + 'icon/klar-512.png', await png(voll, 512));
 writeFileSync(ROOT + 'icon/klar-192.png', await png(voll, 192));
-writeFileSync(ROOT + 'icon/klar-maske-512.png', await png(voll.replace('scale(25.75)', 'scale(19)').replace('translate(100 100)', 'translate(208 208)'), 512));
+writeFileSync(ROOT + 'icon/klar-maske-512.png', await png(eckig.replace('scale(25.75)', 'scale(19)').replace('translate(100 100)', 'translate(208 208)'), 512));
 const touch = (await png(voll, 180)).toString('base64');
 const tab = (await png(svg, 64)).toString('base64');
 await browser.close();
