@@ -25,10 +25,13 @@ const touch = (await png(voll, 180)).toString('base64');
 const tab = (await png(svg, 64)).toString('base64');
 await browser.close();
 let html = lies(SRC);
+/* Zwei Stellen je Zeichen: der Kopf der Seite und KOPFEXTRA im Code (dort mit \"),
+ * aus dem Klar sich beim Sichern selbst neu baut – sonst käme das alte Zeichen zurück. */
 const ersetze = (rel, b64) => {
-  const re = new RegExp(`(<link rel="${rel}"[^>]*href="data:image/png;base64,)[^"]+(")`);
-  if (!re.test(html)) throw new Error(`<link rel="${rel}"> nicht gefunden`);
-  html = html.replace(re, (_, a, z) => a + b64 + z);
+  const re = new RegExp(`(<link rel=\\\\?"${rel}\\\\?"[^>]*?href=\\\\?"data:image/png;base64,)[^"\\\\]+`, 'g');
+  const n = (html.match(re) || []).length;
+  if (n !== 2) throw new Error(`<link rel="${rel}"> ${n}× gefunden, erwartet 2 (Kopf und KOPFEXTRA)`);
+  html = html.replace(re, (_, a) => a + b64);
 };
 ersetze('apple-touch-icon', touch);
 ersetze('icon', tab);
