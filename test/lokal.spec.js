@@ -103,7 +103,7 @@ test('abgeschlossene Mitschriften und erledigte Aufgaben bleiben auffindbar @mob
     ],
     mitschriften: [{ id: 'm-a', titel: 'Termin von gestern', teilnehmer: '', html: '<p>Inhalt der Mitschrift</p>', am: '2026-10-10', erstellt: '2026-10-10T09:10:00.000Z', zeilen: [], mstatus: 'abgeschlossen', verarbeitetAm: '2026-10-11T06:40:00.000Z', auswertung: null }]
   };
-  await page.locator('#marke').click();
+  await page.locator('#menuknopf').click();
   await page.locator('[data-mtu="bruecke"]').click();
   await page.locator('#breingabe').fill(JSON.stringify(stand));
   await page.locator('[data-btu="rein"]').click();
