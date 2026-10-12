@@ -186,3 +186,28 @@ test('Verlaufsschritt für einen Unterpunkt festhalten @mobil', async ({ page })
   await expect(page.locator('.verlauf li', { hasText: 'Kunde hat Unterlagen geschickt' }).locator('.v-zu')).toHaveCount(0);
   expect(problems).toEqual([]);
 });
+
+test('Zahl am App-Zeichen zählt, was läuft @mobil', async ({ page }) => {
+  await page.addInitScript(() => {
+    window.__zeichen = [];
+    navigator.setAppBadge = n => { window.__zeichen.push(n); return Promise.resolve(); };
+    navigator.clearAppBadge = () => { window.__zeichen.push(0); return Promise.resolve(); };
+  });
+  const problems = await open(page);
+  const stand = {
+    fassung: 12, cluster: [], reihen: [], gruppen: [], tagwerkStart: '2026-09-01T00:00:00.000Z', zuletzt: '2026-10-10T10:00:00.000Z',
+    aufgaben: [
+      { id: 'a-1', titel: 'Zwei Punkte laufen', status: 'offen', prio: 2, laeuft: true, verlauf: [],
+        punkte: [{ id: 'p-1', t: 'Eins', st: 'laeuft' }, { id: 'p-2', t: 'Zwei', st: 'laeuft' }, { id: 'p-3', t: 'Drei', st: 'offen' }] },
+      { id: 'a-2', titel: 'Läuft ohne Punkte', status: 'offen', prio: 2, laeuft: true, verlauf: [], punkte: [] },
+      { id: 'a-3', titel: 'Liegt nur', status: 'offen', prio: 2, verlauf: [], punkte: [] },
+      { id: 'a-4', titel: 'Fertig', status: 'erledigt', prio: 2, laeuft: false, verlauf: [], punkte: [{ id: 'p-4', t: 'x', st: 'laeuft' }] }
+    ],
+    mitschriften: []
+  };
+  await menu(page, 'bruecke');
+  await page.locator('#breingabe').fill(JSON.stringify(stand));
+  await page.locator('[data-btu="rein"]').click();
+  await expect.poll(() => page.evaluate(() => window.__zeichen[window.__zeichen.length - 1])).toBe(3);
+  expect(problems).toEqual([]);
+});
