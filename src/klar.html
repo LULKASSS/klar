@@ -1500,6 +1500,22 @@ html[data-himmel] #hinweis {
    welchen Unterpunkt das gedacht war.“ Über dem Eingabefeld die Wahl, am
    Eintrag ein leises Etikett, am Unterpunkt die eigenen Schritte. */
 .v-wahl { display: flex; flex-wrap: wrap; gap: 6px; }
+.p-nr {
+  flex: none; display: inline-flex; align-items: center; justify-content: center;
+  min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px;
+  font-family: var(--marke-schrift); font-size: calc(11px * var(--sk)); font-weight: 600; font-variant-numeric: tabular-nums; line-height: 1;
+  color: var(--akzent); background: var(--akzent-weich);
+}
+.p-kopf .p-nr { margin-right: -5px; }
+.punkte li.kompakt .p-nr { margin: 0 -5px 0 -2px; opacity: .7; }
+.v-wahl button { display: inline-flex; align-items: center; gap: 6px; }
+.v-wahl-t, .v-zu-t { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.verlauf .v-zu { display: inline-flex; align-items: center; gap: 5px; padding: 0 8px 0 0; }
+.verlauf .v-zu .p-nr { background: var(--akzent); color: var(--akzent-text); }
+.v-wahl button[aria-pressed="true"] .p-nr { background: var(--akzent); color: var(--akzent-text); }
+/* Die Karte, für die gerade eingetragen wird, ist umrandet. */
+.punkte li.v-ziel { border-color: var(--akzent); box-shadow: 0 0 0 1px var(--akzent); }
+.punkte li.v-ziel .p-nr { background: var(--akzent); color: var(--akzent-text); }
 .v-wahl button {
   max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   font-family: inherit; font-size: calc(12.5px * var(--sk)); color: var(--ink2);
@@ -8032,9 +8048,10 @@ html:has(.mfenster) #hinweis { display: none !important; }
     var n = String(pk.notiz || "");
     var k = String(pk.loesung || "");
     var t = [];
-    t.push('<li data-i="' + i + '" data-ok="' + (st === "fertig" ? "ja" : "nein") + '" data-st="' + st + '"' + (frisch ? ' class="frisch"' : "") + ">");
+    t.push('<li data-i="' + i + '" data-pid="' + esc(pk.id || "") + '" data-ok="' + (st === "fertig" ? "ja" : "nein") + '" data-st="' + st + '"' + (frisch ? ' class="frisch"' : "") + ">");
     t.push('<div class="p-kopf">');
     t.push('<button type="button" class="haken" data-atu="punkt-um" aria-label="' + esc(PST[st]) + '" title="' + esc(PST[st]) + '">' + HAKEN + "</button>");
+    t.push(nrMarke(pk.id));
     t.push('<input class="punkt-feld" data-feld="punkt" value="' + esc(pk.t || "") + '" aria-label="Unterpunkt" autocomplete="off">');
     if (zu) { t.push('<button type="button" class="knopf-klein p-zu" data-atu="punkt-auf" aria-label="Einklappen" title="Einklappen">\u25b4</button>'); }
     t.push('<button type="button" class="knopf-klein weg" data-atu="punkt-weg" aria-label="Unterpunkt löschen">×</button>');
@@ -8078,6 +8095,14 @@ html:has(.mfenster) #hinweis { display: none !important; }
   /* Für welchen Unterpunkt der nächste Schritt gedacht ist. Ohne eigene Wahl:
      läuft genau ein Punkt, dann der, sonst die ganze Aufgabe. */
   var verlaufFuer = { aid: null, pid: null, hand: false };
+  /* 12.10.2026: Lukas: „so richtig wird mir nicht klar, welches ToDo welches ist.“
+     Jeder Unterpunkt bekommt eine Nummer in der Reihenfolge, in der er im Blatt
+     steht — dieselbe an der Karte, an der Wahl und am Verlaufseintrag. */
+  var punktNr = {};
+  function nrMarke(pid) {
+    var n = pid ? punktNr[pid] : null;
+    return n ? '<span class="p-nr" aria-hidden="true">' + n + "</span>" : "";
+  }
   function verlaufWahlPunkte(a) {
     return (a.punkte || []).filter(function (pk) { return pk.id && pstand(pk) !== "fertig"; });
   }
@@ -8122,7 +8147,7 @@ html:has(.mfenster) #hinweis { display: none !important; }
           + '<span class="bahn"><span class="knoten"></span><span class="strich"></span></span>');
         t.push('<span class="inhalt"><span class="oben"><span class="wann">' + esc(zeitpunkt(x.am)) + "</span>");
         var zu = !auto && x.pid ? punktNachId(a, x.pid) : null;
-        if (zu) { t.push('<span class="v-zu" title="Unterpunkt">' + esc(zu.t || "") + "</span>"); }
+        if (zu) { t.push('<span class="v-zu" title="Unterpunkt">' + nrMarke(zu.id) + '<span class="v-zu-t">' + esc(zu.t || "") + "</span></span>"); }
         t.push('<button type="button" class="knopf-klein weg" data-atu="verlauf-weg" aria-label="Schritt löschen">\u00d7</button></span>');
         if (auto) {
           t.push('<span class="v-fest">' + esc(x.text || "") + "</span>");
@@ -8139,7 +8164,7 @@ html:has(.mfenster) #hinweis { display: none !important; }
       t.push('<button type="button" data-atu="verlauf-fuer" data-pid="" aria-pressed="' + (!ziel) + '">Ganze Aufgabe</button>');
       wahl.forEach(function (pk) {
         t.push('<button type="button" data-atu="verlauf-fuer" data-pid="' + esc(pk.id) + '" aria-pressed="' + (ziel === pk.id) + '"'
-          + (pstand(pk) === "laeuft" ? ' data-laeuft="ja"' : "") + ">" + esc(pk.t || "Unterpunkt") + "</button>");
+          + (pstand(pk) === "laeuft" ? ' data-laeuft="ja"' : "") + ">" + nrMarke(pk.id) + '<span class="v-wahl-t">' + esc(pk.t || "Unterpunkt") + "</span></button>");
       });
       t.push("</div>");
     }
@@ -8183,7 +8208,14 @@ html:has(.mfenster) #hinweis { display: none !important; }
     alt.parentNode.replaceChild(h.firstChild, alt);
     verlaufMikro(); hoehenAnpassen();
   }
+  function verlaufZielZeigen() {
+    var pid = verlaufFuer.pid;
+    Array.prototype.forEach.call(document.querySelectorAll(".punkte li[data-pid]"), function (li) {
+      li.classList.toggle("v-ziel", !!pid && li.dataset.pid === pid);
+    });
+  }
   function verlaufMikro() {
+    verlaufZielZeigen();
     diktatAnbinden(document.getElementById("vmikro"), document.getElementById("vfeld"));
   }
   /* art: "hand" = von Lukas getippt, "auto" = von der Seite mitgeschrieben.
@@ -8244,8 +8276,9 @@ html:has(.mfenster) #hinweis { display: none !important; }
   function punktKompakt(a, pk, i) {
     var am = punktFertigAm(a, pk), d = am ? new Date(am) : null;
     var hat = String(pk.notiz || "").trim() || String(pk.loesung || "").trim() || punktSchritte(a, pk).length;
-    return '<li class="kompakt" data-i="' + i + '" data-ok="ja" data-st="fertig">'
+    return '<li class="kompakt" data-i="' + i + '" data-pid="' + esc(pk.id || "") + '" data-ok="ja" data-st="fertig">'
       + '<button type="button" class="haken" data-atu="punkt-um" aria-label="' + esc(PST.fertig) + '" title="' + esc(PST.fertig) + '">' + HAKEN + "</button>"
+      + nrMarke(pk.id)
       + '<button type="button" class="p-zeile" data-atu="punkt-auf" aria-expanded="false" title="Aufklappen">'
       + '<span class="pt">' + esc(pk.t || "") + "</span>"
       + (hat ? '<span class="pi" aria-label="mit Notiz"></span>' : "")
@@ -8441,6 +8474,9 @@ html:has(.mfenster) #hinweis { display: none !important; }
     (a.punkte || []).forEach(function (pk) {
       if (punktReihe.oben.indexOf(pk.id) === -1 && punktReihe.unten.indexOf(pk.id) === -1) { obenIds.push(pk.id); }
     });
+    punktNr = {};
+    obenIds.concat(punktReihe.unten).filter(function (id) { return pIdx[id] !== undefined; })
+      .forEach(function (id, n) { punktNr[id] = n + 1; });
     obenIds.forEach(function (id) {
       var i = pIdx[id];
       if (i === undefined) { return; }
@@ -8449,6 +8485,7 @@ html:has(.mfenster) #hinweis { display: none !important; }
     t.push('<li class="neupunkt"><span class="platz" aria-hidden="true"></span>');
     t.push('<input class="punkt-feld" data-feld="punkt-neu" placeholder="Punkt hinzufügen …" aria-label="Neuer Unterpunkt" autocomplete="off"></li>');
     var untenIds = punktReihe.unten.filter(function (id) { return pIdx[id] !== undefined; });
+
     if (untenIds.length) {
       t.push('<li class="p-trenner" aria-hidden="true">Erledigt \u00b7 ' + untenIds.length + "</li>");
       untenIds.forEach(function (id) {
@@ -9792,6 +9829,7 @@ html:has(.mfenster) #hinweis { display: none !important; }
       Array.prototype.forEach.call(document.querySelectorAll('[data-atu="verlauf-fuer"]'), function (b) {
         b.setAttribute("aria-pressed", String((b.dataset.pid || null) === verlaufFuer.pid));
       });
+      verlaufZielZeigen();
       var vf0 = document.getElementById("vfeld");
       if (vf0) { try { vf0.focus({ preventScroll: true }); } catch (e) {} }
       return;

@@ -163,13 +163,19 @@ test('Verlaufsschritt für einen Unterpunkt festhalten @mobil', async ({ page })
   /* läuft genau ein Punkt, ist er vorgewählt */
   const wahl = page.locator('.v-wahl button');
   await expect(wahl).toHaveCount(3);
-  await expect(page.locator('.v-wahl button[aria-pressed="true"]')).toHaveText('Tarife holen');
+  await expect(page.locator('.v-wahl button[aria-pressed="true"]')).toContainText('Tarife holen');
+  /* Nummer an Karte und Wahl gleich, die Zielkarte ist markiert */
+  await expect(page.locator('.v-wahl button[aria-pressed="true"] .p-nr')).toHaveText('1');
+  await expect(page.locator('.punkte li[data-pid="p-a"] .p-kopf .p-nr')).toHaveText('1');
+  await expect(page.locator('.punkte li[data-pid="p-a"]')).toHaveClass(/v-ziel/);
   await page.locator('#vfeld').fill('Zwei Tarife angefragt');
   await page.locator('[data-atu="verlauf-ab"]').click();
-  await expect(page.locator('.verlauf li', { hasText: 'Zwei Tarife angefragt' }).locator('.v-zu')).toHaveText('Tarife holen');
+  await expect(page.locator('.verlauf li', { hasText: 'Zwei Tarife angefragt' }).locator('.v-zu')).toContainText('Tarife holen');
   await expect(page.locator('.punkte li[data-i="0"] .p-schritte')).toContainText('Zwei Tarife angefragt');
   /* anderer Punkt, dann die ganze Aufgabe */
   await page.locator('.v-wahl button', { hasText: 'Rückruf vereinbaren' }).click();
+  await expect(page.locator('.punkte li[data-pid="p-b"]')).toHaveClass(/v-ziel/);
+  await expect(page.locator('.punkte li[data-pid="p-a"]')).not.toHaveClass(/v-ziel/);
   await page.locator('#vfeld').fill('Mailbox, morgen nochmal');
   await page.locator('[data-atu="verlauf-ab"]').click();
   await expect(page.locator('.punkte li[data-i="1"] .p-schritte')).toContainText('Mailbox, morgen nochmal');
