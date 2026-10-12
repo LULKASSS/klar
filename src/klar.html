@@ -7436,7 +7436,6 @@ html:has(.mfenster) #hinweis { display: none !important; }
 
   function kopfZeichnen() {
     var offeneA = zustand.aufgaben.filter(function (a) { return a.status !== "erledigt"; }).length;
-    var wartet = 0;
     document.getElementById("zahl-a").textContent = offeneA;
     var offeneV = wartende().length;
     var zm = document.getElementById("zahl-m");
@@ -7450,12 +7449,8 @@ html:has(.mfenster) #hinweis { display: none !important; }
     Array.prototype.forEach.call(document.querySelectorAll("#segmente button"), function (b) {
       b.setAttribute("aria-pressed", b.dataset.m === modus ? "true" : "false");
     });
-    var dran = wartet + zustand.aufgaben.filter(function (a) {
-      if (a.status === "erledigt") { return false; }
-      var n = tageBis(a.faellig);
-      return (a.prio || 2) === 1 || (n !== null && n <= 0);
-    }).length;
-    document.title = dran ? "(" + dran + ") Klar" : "Klar";
+    /* 12.10.2026: keine Zahl mehr im Fenstertitel (Lukas: „mach das unbedingt weg“). */
+    document.title = "Klar";
 
     var f = document.getElementById("filter");
     if (modus === "aufgaben") {
